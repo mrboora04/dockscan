@@ -1,0 +1,64 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DockScan • Live</title>
+<style>
+  body{margin:0;background:#0b1220;color:#e5e7eb;font:16px/1.5 system-ui}
+  .wrap{position:relative;max-width:420px;margin:10px auto}
+  video{width:100%;border-radius:12px}
+  .frame{position:absolute;inset:0;pointer-events:none}
+  .box{position:absolute;left:10%;top:30%;width:80%;height:40%;
+       border:2px solid #34d399;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.35) inset}
+  .hud{max-width:420px;margin:8px auto;text-align:center}
+  .ok{color:#22c55e}.warn{color:#f59e0b}
+</style>
+<div class="wrap">
+  <video id="cam" autoplay playsinline></video>
+  <div class="frame"><div class="box" id="box"></div></div>
+</div>
+<div class="hud" id="hud">Ready…</div>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+(async()=>{
+  const v=document.getElementById('cam'), hud=document.getElementById('hud'), box=document.getElementById('box');
+  const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}); v.srcObject=stream;
+
+  const worker = await Tesseract.createWorker('eng', 1);
+  await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, preserve_interword_spaces:'1' });
+
+  const grab = () => {
+    const r = box.getBoundingClientRect(), vr=v.getBoundingClientRect();
+    // map CSS box -> video pixels
+    const sx = (r.left - vr.left) / vr.width * v.videoWidth;
+    const sy = (r.top  - vr.top ) / vr.height* v.videoHeight;
+    const sw = r.width / vr.width * v.videoWidth;
+    const sh = r.height/ vr.height* v.videoHeight;
+
+    const c=document.createElement('canvas'); c.width=sw|0; c.height=sh|0;
+    c.getContext('2d', {willReadFrequently:true}).drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  };
+
+  function extractMs(t=''){ t=t.toUpperCase().replace(/[OQ]/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8');
+    const m=t.match(/6\s*1\s*0\s*0[\s-]*[\d\s-]{6,}/); if(m){const c=m[0].replace(/\D/g,'').slice(0,10); if(/^6100\d{6}$/.test(c)) return c;} return ''; }
+  function extractCustomer(T=''){ T=T.toUpperCase(); const key=/(CONSIGNEE|CONSUMER|CUSTOMER|DESTINATAIRE)\s*:?\s*([A-Z\s'.-]{3,})/;
+    const k=T.match(key); if(k&&k[2]) return k[2].replace(/\s{2,}/g,' ').trim();
+    const lines=T.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const g=lines.find(L=>/[A-Z]{3,}\s+[A-Z]{3,}/.test(L)&&L.length<=40&&!/\d{5,}/.test(L)); return g||''; }
+
+  let busy=false;
+  setInterval(async ()=>{
+    if(busy || v.videoWidth===0) return; busy=true;
+    try{
+      const c=grab();
+      const { data } = await worker.recognize(c);
+      const ms = extractMs(data.text||'');
+      const name = extractCustomer(data.text||'');
+      if(ms){
+        hud.innerHTML = `<span class="ok">✓ ${ms}</span>  ${name?`· ${name}`:''} — <b>Confirm **** ${ms.slice(-4)}?</b>`;
+      }else{
+        hud.innerHTML = `<span class="warn">Scanning…</span>`;
+      }
+    }catch(e){ hud.textContent = 'Error: '+e.message; }
+    finally{ busy=false; }
+  }, 900);
+})();
+</script>

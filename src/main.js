@@ -1,4 +1,3 @@
-// src/main.js
 import { queueFiles, onResult, resetQueue, exportCSV, setConcurrencyBadge, setProgress } from './ui.js';
 import { processOne } from './worker-pipeline.js';
 
@@ -6,10 +5,10 @@ const input = document.getElementById('fileInput');
 const dz = document.getElementById('dropZone');
 const clearBtn = document.getElementById('clearBtn');
 const csvBtn = document.getElementById('csvBtn');
-const lgToggle = document.getElementById('lgToggle'); // <— add in HTML
-let LG_MODE = true;
+const lgToggle = document.getElementById('lgToggle');
 
-const MAX_PARALLEL = 2; // use 2 for your laptop; you can try 3–4 later
+let LG_MODE = true;
+const MAX_PARALLEL = 2;
 setConcurrencyBadge(`${MAX_PARALLEL} parallel workers`);
 
 let results = [];
@@ -18,6 +17,7 @@ let filesToProcess = [];
 lgToggle?.addEventListener('click', () => {
   LG_MODE = !LG_MODE;
   lgToggle.classList.toggle('on', LG_MODE);
+  lgToggle.textContent = LG_MODE ? 'LG priority mode' : 'Regular mode';
 });
 
 onResult((r) => {
@@ -46,7 +46,7 @@ function handleFiles(list) {
   results = new Array(files.length);
   setProgress(0, files.length);
 
-  files.forEach((f, i) => queueFiles.push({ file: f, index: i }));
+  files.forEach((f, i) => queueFiles.push({ file: f, index: i, mode: (LG_MODE ? 'lg' : 'regular') }));
   runPipeline();
 }
 
@@ -54,11 +54,10 @@ async function runPipeline() {
   const parallel = Math.min(MAX_PARALLEL, queueFiles.length);
   await Promise.all(new Array(parallel).fill(0).map(() => workerLoop()));
 }
-
 async function workerLoop() {
   while (queueFiles.length) {
     const job = queueFiles.shift();
     if (!job) break;
-    await processOne({ ...job, mode: LG_MODE ? 'lg' : 'regular' });
+    await processOne(job);
   }
 }

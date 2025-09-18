@@ -1,81 +1,78 @@
-// Finds the most label-like white area: “large-ish rectangle w/ dark ink density”
-const ANALYSIS_WIDTH = 480;
+// src/preprocess.js
+// Find the most "label-like" bright rectangle and return a crop {x,y,width,height} in ORIGINAL pixels.
+const ANALYSIS_W = 480;   // downscale for speed
 
-export async function findAndCropLabel(file) {
+export async function findLabelRect(file) {
   const bmp = await createImageBitmap(file);
-  const scale = ANALYSIS_WIDTH / bmp.width;
-  const h = Math.round(bmp.height * scale);
+  const scale = ANALYSIS_W / bmp.width;
+  const H = Math.round(bmp.height * scale);
 
-  const cv = new OffscreenCanvas(ANALYSIS_WIDTH, h);
-  const cx = cv.getContext('2d', { willReadFrequently: true });
-  cx.drawImage(bmp, 0, 0, ANALYSIS_WIDTH, h);
-  const id = cx.getImageData(0, 0, ANALYSIS_WIDTH, h);
+  const c = new OffscreenCanvas(ANALYSIS_W, H);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0, ANALYSIS_W, H);
 
-  const binary = new Uint8Array(ANALYSIS_WIDTH*h);
-  const d = id.data;
-  for (let i=0;i<d.length;i+=4){
-    const g = (d[i]+d[i+1]+d[i+2])/3;
-    binary[i/4] = g>200 ? 1 : 0; // “white lot”
+  const im = g.getImageData(0, 0, ANALYSIS_W, H);
+  const data = im.data;
+
+  // threshold to "white-ish"
+  const white = new Uint8Array(ANALYSIS_W * H);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const y = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+    white[p] = y > 200 ? 1 : 0;
   }
 
-  const blobs = components(binary, ANALYSIS_WIDTH, h);
-  if (!blobs.length) return null;
+  // connected components
+  const seen = new Uint8Array(white.length);
+  const blobs = [];
+  const W = ANALYSIS_W;
+  for (let p = 0; p < white.length; p++) {
+    if (!white[p] || seen[p]) continue;
+    const stack = [p];
+    seen[p] = 1;
+    let minX = W, minY = H, maxX = 0, maxY = 0, area = 0;
 
-  const best = blobs
-    .map(b => ({...b, score: scoreBlob(b, id)}))
-    .sort((a,b)=>b.score-a.score)[0];
-
-  if (!best || best.score < 500) return null;
-
-  const pad = .05; // padding
-  return {
-    x: Math.max(0, (best.minX/scale) - bmp.width*pad),
-    y: Math.max(0, (best.minY/scale) - bmp.height*pad),
-    width: Math.min(bmp.width, (best.width/scale) + bmp.width*pad*2),
-    height: Math.min(bmp.height, (best.height/scale) + bmp.height*pad*2)
-  };
-}
-
-function components(map,w,h){
-  const seen = new Uint8Array(map.length);
-  const res = [];
-  for (let i=0;i<map.length;i++){
-    if (map[i]!==1 || seen[i]) continue;
-    const st=[i]; seen[i]=1;
-    const blob={minX:w, minY:h, maxX:0, maxY:0, area:0};
-    while(st.length){
-      const p=st.pop();
-      const x=p%w, y=(p-x)/w;
-      blob.minX=Math.min(blob.minX,x); blob.minY=Math.min(blob.minY,y);
-      blob.maxX=Math.max(blob.maxX,x); blob.maxY=Math.max(blob.maxY,y);
-      blob.area++;
-      const nbr=[p-w, p+w, p-1, p+1];
-      for(const n of nbr){
-        if(n>=0 && n<map.length && map[n]===1 && !seen[n]){ seen[n]=1; st.push(n); }
+    while (stack.length) {
+      const q = stack.pop();
+      const x = q % W, y = (q / W) | 0;
+      area++; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+      const n = [q-1, q+1, q-W, q+W];
+      for (const t of n) {
+        if (t < 0 || t >= white.length) continue;
+        if (!seen[t] && white[t]) { seen[t] = 1; stack.push(t); }
       }
     }
-    blob.width=blob.maxX-blob.minX+1; blob.height=blob.maxY-blob.minY+1;
-    res.push(blob);
-  }
-  return res;
-}
+    const w = maxX - minX + 1, h = maxY - minY + 1;
+    // score: prefer large-ish, near-rect, reasonable aspect, and some dark "ink" density inside
+    if (area < 300) continue;
+    const ar = w / h;
+    if (ar < 0.3 || ar > 6.0) continue;
 
-function scoreBlob(b, id){
-  const ar = b.width/b.height;
-  const area = b.area;
-  if (ar<0.25 || ar>5.5) return 0;
-  if (area<500) return 0;
-
-  let dark=0;
-  const w=id.width;
-  for(let y=b.minY; y<=b.maxY; y++){
-    for(let x=b.minX; x<=b.maxX; x++){
-      const k=(y*w+x)*4;
-      const g=(id.data[k]+id.data[k+1]+id.data[k+2])/3;
-      if (g<165) dark++;
+    // ink density: count dark pixels inside the bounding box
+    let dark = 0;
+    for (let yy = minY; yy <= maxY; yy++) {
+      for (let xx = minX; xx <= maxX; xx++) {
+        const i = (yy * W + xx) * 4;
+        const Y = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+        if (Y < 150) dark++;
+      }
     }
+    const density = dark / (w * h);
+    if (density < 0.08 || density > 0.7) continue;
+
+    const score = area * density; // simple and effective
+    blobs.push({ minX, minY, maxX, maxY, w, h, score });
   }
-  const density=dark/area;
-  if (density<.10 || density>.65) return 0;
-  return area*density;
+
+  if (!blobs.length) return null;
+  blobs.sort((a,b) => b.score - a.score);
+  const b = blobs[0];
+
+  // expand a bit and map back to original pixels
+  const padX = Math.round(b.w * 0.05);
+  const padY = Math.round(b.h * 0.05);
+  const x = Math.max(0, (b.minX - padX) / scale);
+  const y = Math.max(0, (b.minY - padY) / scale);
+  const width  = Math.min(bmp.width  - x, (b.w + 2*padX) / scale);
+  const height = Math.min(bmp.height - y, (b.h + 2*padY) / scale);
+  return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
 }

@@ -1,33 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>DockScan — LG Scanner (Fast)</title>
+  <title>DockScan</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
   <link rel="stylesheet" href="styles.css" />
-  <!-- ZXing UMD (fallback barcode engine) -->
+  <!-- ZXing (barcode fallback) -->
   <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
-  <!-- Tesseract UMD (OCR) -->
+  <!-- Tesseract (OCR) -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-</head>
+  <a class="btn" href="live.html">Live mode</a>
 
+</head>
 <body>
   <header class="topbar">
     <h1>DockScan</h1>
     <div class="controls">
-      <div class="mode-pill">
-        <span class="dot"></span> LG priority mode
-      </div>
+      <button id="lgToggle" class="btn pill on">LG priority mode</button>
+      <label class="btn">
+        <input id="fileInput" type="file" accept="image/*" capture="environment" multiple hidden />
 
-      <div class="actions">
-        <label class="btn">
-          <input id="fileInput" type="file" accept="image/*" multiple hidden />
-          Browse…
-        </label>
-        <button id="clearBtn" class="btn ghost">Clear</button>
-        <button id="csvBtn" class="btn ghost" disabled>Export CSV</button>
-      </div>
+        Browse…
+      </label>
+      <button id="clearBtn" class="btn ghost">Clear</button>
+      <button id="csvBtn" class="btn ghost" disabled>Export CSV</button>
     </div>
   </header>
 
@@ -45,15 +42,11 @@
     </section>
 
     <section class="results-container">
-      <table class="grid" id="results">
+      <table class="grid">
         <thead>
-          <tr>
-            <th>#</th>
-            <th>File</th>
-            <th>MS#</th>
-            <th>Status</th>
-            <th>Raw (first 180 chars)</th>
-          </tr>
+        <tr>
+          <th>#</th><th>File</th><th>MS#</th><th>Status</th><th>Raw (first 180 chars)</th>
+        </tr>
         </thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -64,10 +57,6 @@
     <small>Local only · Nothing leaves your browser</small>
   </footer>
 
-  <!-- App -->
-  <script type="module" src="./src/main.js"></script>
-
-  <!-- Raw text modal -->
   <div id="rawModal" class="modal-overlay hidden">
     <div class="modal-content">
       <button id="modalCloseBtn" class="modal-close">&times;</button>
@@ -75,5 +64,7 @@
       <pre id="modalRawText"></pre>
     </div>
   </div>
+
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>

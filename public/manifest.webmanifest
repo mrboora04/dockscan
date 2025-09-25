@@ -1,0 +1,9 @@
+﻿{
+  "name": "DockScan",
+  "short_name": "DockScan",
+  "start_url": "/live.html",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": []
+}

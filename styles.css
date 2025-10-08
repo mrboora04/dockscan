@@ -131,7 +131,7 @@ html, body {
 .zoom-ctl {
     display: none;
     position: absolute;
-    bottom: 120px;
+    bottom: 165px;
     left: 50%;
     transform: translateX(-50%);
     background-color: rgba(20, 20, 20, 0.8);

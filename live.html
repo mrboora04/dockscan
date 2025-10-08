@@ -1,12 +1,11 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF--8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>DockScan - Live</title>
     <link rel="manifest" href="/public/manifest.json">
     <style>
-        /* CSS is now inside the HTML file to guarantee it loads */
         :root {
             --bg-dark: #000;
             --bg-light: #1f2937;
@@ -27,7 +26,7 @@
             color: var(--text-light);
             height: 100%;
             width: 100%;
-            overflow: hidden; /* This prevents all scrolling */
+            overflow: hidden;
         }
 
         .scanner-container {
@@ -56,7 +55,6 @@
             flex-wrap: wrap;
         }
         
-        /* This container holds the camera and all overlays */
         .vid-ctn {
             flex-grow: 1; 
             position: relative;
@@ -69,7 +67,6 @@
             object-fit: cover;
         }
 
-        /* This is the aiming box and the "light system" */
         .box {
             position: absolute;
             border: 4px solid var(--border-color);
@@ -84,7 +81,7 @@
 
         .hud {
             position: absolute;
-            bottom: 110px;
+            bottom: 90px; /* CORRECTED: Positioned above the main controls */
             left: 0;
             right: 0;
             padding: 10px;
@@ -96,9 +93,9 @@
         }
         
         .zoom-ctl {
-            display: none; /* Hidden by default, JS will show it */
+            display: none;
             position: absolute;
-            bottom: 120px;
+            bottom: 145px; /* CORRECTED: Positioned above the HUD */
             left: 50%;
             transform: translateX(-50%);
             background-color: rgba(20, 20, 20, 0.8);
@@ -118,7 +115,7 @@
             left: 0;
             right: 0;
             z-index: 10;
-            padding-bottom: env(safe-area-inset-bottom, 12px); /* For iPhones */
+            padding-bottom: env(safe-area-inset-bottom, 12px);
         }
 
         .btn {
@@ -174,11 +171,9 @@
             <video id="cam" playsinline autoplay muted></video>
             <div id="box" class="box"></div>
         </div>
-        
         <header class="scanner-header">
             <div id="brand-selector" class="brand-selector"></div>
         </header>
-        
         <div class="hud" id="hud">Initializing...</div>
         <div id="zoomCtl" class="zoom-ctl">
             <button class="zoom-btn" data-z="1">1x</button>

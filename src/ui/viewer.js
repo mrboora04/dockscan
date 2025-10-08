@@ -1,88 +1,134 @@
 ﻿// src/ui/viewer.js
+
 import { app } from "../core/firebase.js";
 import {
   getFirestore, collection, query, orderBy, limit, onSnapshot,
-  doc, updateDoc, deleteDoc, getDocs, writeBatch
+  doc, deleteDoc, getDocs, writeBatch
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-const db        = getFirestore(app);
-const rows      = document.getElementById("rows");
-const chkAll    = document.getElementById("chkAll");
+const db = getFirestore(app);
+const scanGrid = document.getElementById("scan-grid");
 const btnDelSel = document.getElementById("btnDelSel");
 const btnClearAll = document.getElementById("btnClearAll");
+const chkAll = document.getElementById("chkAll"); // Ensure this is also linked
 
-// A more standard time format
-function fmtTs(ts) {
-  try {
-    return new Date((ts?.seconds || ts?._seconds) * 1000).toLocaleTimeString("en-US", { hour12: false });
-  } catch {
-    return ""
-  }
+function formatTimestamp(ts) {
+  if (!ts || !ts.seconds) return "";
+  return new Date(ts.seconds * 1000).toLocaleString();
 }
 
-// Function to create a table row element
-function createRowElement(id, data) {
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td><input type="checkbox" class="pick" data-id="${id}"></td>
-    <td>${fmtTs(data.ts) || ""}</td>
-    <td contenteditable data-k="ms">${data.ms || ""}</td>
-    <td contenteditable data-k="model">${data.model || ""}</td>
-    <td contenteditable data-k="customer">${data.customer || ""}</td>
-    <td>${data.status || ""}</td>
-    <td>${data.thumb ? `<img src="${data.thumb}" class="thumb">` : ""}</td>
-    <td>${data.conf != null ? `conf ${data.conf}% · motion ${data.motion||0}` : ""}</td>
-    <td><code class="raw-text">${(data.raw || "").replace(/</g, "&lt;")}</code></td>
-    <td>
-      <button class="saveBtn btn ghost">Save</button>
-      <button class="delBtn btn ghost">Delete</button>
-    </td>
-  `;
+/**
+ * Creates a single "scan card" element.
+ */
+function createCardElement(docId, data) {
+    const card = document.createElement("div");
+    card.className = "scan-card";
+    card.dataset.id = docId;
 
-  // Save button logic
-  const saveBtn = tr.querySelector(".saveBtn");
-  saveBtn.onclick = async () => {
-    const payload = {};
-    tr.querySelectorAll("[data-k]").forEach(td => payload[td.dataset.k] = td.textContent.trim());
-    
-    saveBtn.textContent = "Saving...";
-    saveBtn.disabled = true;
-    await updateDoc(doc(db, "scans", id), payload);
-    saveBtn.textContent = "Saved!";
-    setTimeout(() => {
-      saveBtn.textContent = "Save";
-      saveBtn.disabled = false;
-    }, 1200);
-  };
-
-  // Inline delete button logic
-  tr.querySelector(".delBtn").onclick = async () => {
-    if (confirm("Delete this row?")) {
-      await deleteDoc(doc(db, "scans", id));
+    // Brand Tag (using diagnostics.brandProfileUsed)
+    const brand = data.diagnostics?.brandProfileUsed;
+    if (brand) {
+        const brandTag = document.createElement("div");
+        brandTag.className = "card-brand-tag";
+        brandTag.textContent = brand;
+        card.appendChild(brandTag);
     }
-  };
 
-  return tr;
+    const thumbnail = document.createElement("img");
+    thumbnail.className = "card-thumbnail";
+    thumbnail.src = data.thumb || 'https://via.placeholder.com/350x200?text=No+Image'; // Better placeholder
+    card.appendChild(thumbnail);
+    
+    const body = document.createElement("div");
+    body.className = "card-body";
+
+    // Checkbox for batch actions
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.className = "card-checkbox pick";
+    chk.dataset.id = docId;
+    card.appendChild(chk);
+
+    // Info Row for Model and MS#
+    const infoRow = document.createElement("div");
+    infoRow.className = "card-info-row";
+    infoRow.innerHTML = `
+        <div class="model">
+            <div class="label">Model</div>
+            <div class="value">${data.model || "N/A"}</div>
+        </div>
+        <div class="ms" style="text-align: right;">
+            <div class="label">MS#</div>
+            <div class="value">${data.ms || "N/A"}</div>
+        </div>
+    `;
+
+    // Customer Info
+    const customer = document.createElement("div");
+    customer.className = "card-customer";
+    customer.innerHTML = `
+        <div class="label">Customer</div>
+        <div class="value">${data.customer || "N/A"}</div>
+    `;
+
+    // Details/Summary (Now includes Confidence and Motion)
+    const details = document.createElement("div");
+    details.className = "card-details";
+    const ocrConfidence = data.diagnostics?.ocrConfidence ?? 0;
+    const motionValue = data.diagnostics?.motion ?? 0;
+
+    details.innerHTML = `
+        Time: ${formatTimestamp(data.ts)}<br>
+        Summary: conf ${ocrConfidence}% · motion ${motionValue}
+        <div class="raw-text-preview" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 80px; overflow: hidden; text-overflow: ellipsis; margin-top: 8px; color: var(--text-dark);">
+            ${(data.raw || "").replace(/</g, "&lt;")}
+        </div>
+    `;
+
+    body.appendChild(infoRow);
+    body.appendChild(customer);
+    body.appendChild(details);
+
+    // Actions
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.onclick = async () => {
+        if (confirm("Delete this scan?")) {
+            await deleteDoc(doc(db, "scans", docId));
+        }
+    };
+    
+    actions.appendChild(deleteBtn);
+
+    card.appendChild(body);
+    card.appendChild(actions);
+
+    return card;
 }
 
 // Listen for real-time updates from Firestore
-onSnapshot(query(collection(db, "scans"), orderBy("ts", "desc"), limit(200)), (snapshot) => {
-  rows.innerHTML = ""; // Clear existing rows
-  snapshot.forEach(doc => {
-    rows.appendChild(createRowElement(doc.id, doc.data()));
-  });
-  chkAll.checked = false; // Uncheck "select all" after re-render
+onSnapshot(query(collection(db, "scans"), orderBy("ts", "desc"), limit(100)), (snapshot) => {
+    scanGrid.innerHTML = ""; // Clear existing cards
+    snapshot.forEach(doc => {
+        scanGrid.appendChild(createCardElement(doc.id, doc.data()));
+    });
+    // Ensure select all checkbox is reset after re-render
+    if (chkAll) chkAll.checked = false;
 });
 
-// "Select All" checkbox logic
-chkAll.addEventListener("change", () => {
-  rows.querySelectorAll(".pick").forEach(cb => cb.checked = chkAll.checked);
-});
+// Event listeners for batch actions
+if (chkAll) {
+    chkAll.addEventListener("change", () => {
+        scanGrid.querySelectorAll(".pick").forEach(cb => cb.checked = chkAll.checked);
+    });
+}
 
-// "Delete Selected" button logic
 btnDelSel.addEventListener("click", async () => {
-  const pickedIds = [...rows.querySelectorAll(".pick:checked")].map(cb => cb.dataset.id);
-  if (!pickedIds.length) return alert("Nothing selected.");
+  const pickedIds = [...document.querySelectorAll(".pick:checked")].map(cb => cb.dataset.id);
+  if (!pickedIds.length) { alert("Nothing selected to delete."); return; }
   if (!confirm(`Delete ${pickedIds.length} item(s)?`)) return;
 
   const originalText = btnDelSel.textContent;
@@ -102,16 +148,15 @@ btnDelSel.addEventListener("click", async () => {
   }
 });
 
-// "Clear All" button logic
 btnClearAll.addEventListener("click", async () => {
-  if (!confirm("Delete EVERYTHING currently listed? This cannot be undone.")) return;
-
+  if (!confirm("Delete ALL listed items? This cannot be undone.")) return;
+  
   const originalText = btnClearAll.textContent;
   btnClearAll.disabled = true;
   btnClearAll.textContent = "Clearing...";
 
   try {
-    const q = query(collection(db, "scans"), limit(200)); // No need to order for deletion
+    const q = query(collection(db, "scans"), limit(100)); // Limit to avoid massive deletes
     const snapshot = await getDocs(q);
     const batch = writeBatch(db);
     snapshot.docs.forEach(d => batch.delete(d.ref));

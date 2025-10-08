@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF--8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>DockScan - Auto</title>
+    <link rel="manifest" href="/public/manifest.json">
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <div class="scanner-container">
+        <div class="vid-ctn">
+            <video id="cam" playsinline autoplay muted></video>
+            <div id="box" class="box"></div>
+        </div>
+        <header class="scanner-header">
+            <div id="brand-selector" class="brand-selector"></div>
+        </header>
+        <div class="hud" id="hud">Initializing...</div>
+        <div id="zoomCtl" class="zoom-ctl">
+            <button class="zoom-btn" data-z="1">1x</button>
+            <button class="zoom-btn" data-z="2">2x</button>
+            <button class="zoom-btn" data-z="3">3x</button>
+        </div>
+        <footer class="controls">
+            <button id="btnStart" class="btn">Start</button>
+            <button id="btnStop" class="btn" disabled>Stop</button>
+            <button id="shutter" class="btn shutter"></button>
+        </footer>
+    </div>
+
+    <script src="https://unpkg.com/@zxing/library@0.21.0/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script type="module" src="/src/ui/live-auto.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/public/sw.js');
+        }
+    </script>
+</body>
+</html>

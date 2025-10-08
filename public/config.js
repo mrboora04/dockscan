@@ -1,4 +1,4 @@
-﻿window.FB_CONFIG = {
+﻿export const FB_CONFIG = {
   apiKey: "AIzaSyD8V_aR5ZYrTkejYdzZeJUQzQ15Llf7W5A",
   authDomain: "vbdockscan.firebaseapp.com",
   projectId: "vbdockscan",

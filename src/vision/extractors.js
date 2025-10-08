@@ -9,7 +9,7 @@ function findValueByKey(ocrData, keys) {
         const keyFound = keys.find(key => lineText.includes(key));
         if (keyFound) {
             let value = lineText.substring(lineText.indexOf(keyFound) + keyFound.length);
-            value = value.replace(/^[\s:-\/]+/, '').trim();
+            value = value.replace(/^[\s:\-\/]+/, '').trim();
             if (value.length > 2) {
                 return value;
             }

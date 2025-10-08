@@ -3,22 +3,39 @@ import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.g
 import { app, auth } from "./firebase.js";
 const db = getFirestore(app);
 
+/**
+ * Saves a scan record to Firestore, adhering to the new data schema.
+ */
 export async function saveScan({
-  ms, customer = "", model = "",
-  raw = "",                 // short raw snippet
-  thumb = "",               // data URL (small JPEG)
-  conf = 0,                 // OCR confidence (0-100)
-  motion = 0,               // frame motion (0..1)
-  usedDigits = false,       // whether second pass (digits) helped
-  ocrMs = 0,                // OCR duration for this capture
-  roi = null                // {w,h} of the crop
+  msNumber = "",
+  model = "",
+  customer = "",
+  brand = "",
+  thumbnail = "",
+  rawText = "",
+  wasCorrected = false,
+  scanQuality = {},
+  // Add userName parameter
+  userName = "" 
 }) {
   return addDoc(collection(db, "scans"), {
-    ms, customer, model, raw, thumb,
-    conf, motion, usedDigits, ocrMs, roi,
-    status: "pending",
-    by: auth.currentUser?.uid || null,
-    ts: serverTimestamp(),
-    mode: "live"
+    // Core Data
+    msNumber,
+    model,
+    customer,
+
+    // IDs
+    userId: auth.currentUser?.uid || null,
+    userName: userName, // Save the user's name
+
+    // Metadata
+    timestamp: serverTimestamp(),
+    brand,
+    thumbnail,
+    wasCorrected,
+
+    // Training & Debug Data
+    scanQuality,
+    rawText,
   });
 }

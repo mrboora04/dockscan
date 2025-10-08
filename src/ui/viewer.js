@@ -25,31 +25,27 @@ function createCardElement(docId, data) {
     card.className = "scan-card";
     card.dataset.id = docId;
 
-    // Brand Tag (using diagnostics.brandProfileUsed)
-    const brand = data.diagnostics?.brandProfileUsed;
-    if (brand) {
-        const brandTag = document.createElement("div");
-        brandTag.className = "card-brand-tag";
-        brandTag.textContent = brand;
-        card.appendChild(brandTag);
-    }
+    // User Name Tag
+    const userName = data.userName || "Unknown User";
+    const userTag = document.createElement("div");
+    userTag.className = "card-brand-tag"; // We can reuse this style
+    userTag.textContent = userName;
+    card.appendChild(userTag);
 
     const thumbnail = document.createElement("img");
     thumbnail.className = "card-thumbnail";
-    thumbnail.src = data.thumb || 'https://via.placeholder.com/350x200?text=No+Image'; // Better placeholder
+    thumbnail.src = data.thumbnail || 'https://via.placeholder.com/350x200?text=No+Image';
     card.appendChild(thumbnail);
     
     const body = document.createElement("div");
     body.className = "card-body";
 
-    // Checkbox for batch actions
     const chk = document.createElement("input");
     chk.type = "checkbox";
     chk.className = "card-checkbox pick";
     chk.dataset.id = docId;
     card.appendChild(chk);
 
-    // Info Row for Model and MS#
     const infoRow = document.createElement("div");
     infoRow.className = "card-info-row";
     infoRow.innerHTML = `
@@ -59,11 +55,10 @@ function createCardElement(docId, data) {
         </div>
         <div class="ms" style="text-align: right;">
             <div class="label">MS#</div>
-            <div class="value">${data.ms || "N/A"}</div>
+            <div class="value">${data.msNumber || "N/A"}</div>
         </div>
     `;
 
-    // Customer Info
     const customer = document.createElement("div");
     customer.className = "card-customer";
     customer.innerHTML = `
@@ -71,25 +66,20 @@ function createCardElement(docId, data) {
         <div class="value">${data.customer || "N/A"}</div>
     `;
 
-    // Details/Summary (Now includes Confidence and Motion)
     const details = document.createElement("div");
     details.className = "card-details";
-    const ocrConfidence = data.diagnostics?.ocrConfidence ?? 0;
-    const motionValue = data.diagnostics?.motion ?? 0;
+    const confidence = data.scanQuality?.confidence ?? 0;
+    const motion = data.scanQuality?.motion ?? 0;
 
     details.innerHTML = `
-        Time: ${formatTimestamp(data.ts)}<br>
-        Summary: conf ${ocrConfidence}% · motion ${motionValue}
-        <div class="raw-text-preview" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 80px; overflow: hidden; text-overflow: ellipsis; margin-top: 8px; color: var(--text-dark);">
-            ${(data.raw || "").replace(/</g, "&lt;")}
-        </div>
+        Time: ${formatTimestamp(data.timestamp)}<br>
+        Brand: ${data.brand || 'N/A'} · Conf: ${confidence}% · Motion: ${motion}
     `;
 
     body.appendChild(infoRow);
     body.appendChild(customer);
     body.appendChild(details);
 
-    // Actions
     const actions = document.createElement("div");
     actions.className = "card-actions";
     const deleteBtn = document.createElement("button");
@@ -108,7 +98,6 @@ function createCardElement(docId, data) {
 
     return card;
 }
-
 // Listen for real-time updates from Firestore
 onSnapshot(query(collection(db, "scans"), orderBy("ts", "desc"), limit(100)), (snapshot) => {
     scanGrid.innerHTML = ""; // Clear existing cards

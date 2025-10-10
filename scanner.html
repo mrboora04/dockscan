@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF--8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>DockScan - Manual</title>
+    <title>DockScan - Scanner</title>
     <link rel="manifest" href="/public/manifest.json">
     <link rel="stylesheet" href="styles.css" />
 </head>
@@ -23,15 +23,16 @@
             <button class="zoom-btn" data-z="3">3x</button>
         </div>
         <footer class="controls">
-            <button id="btnStart" class="btn">Start</button>
-            <button id="btnStop" class="btn" disabled>Stop</button>
+            <a href="/main-menu.html" class="btn ghost">Menu</a>
             <button id="shutter" class="btn shutter"></button>
+            <button id="btnStop" class="btn ghost">Stop</button>
         </footer>
     </div>
 
     <script src="https://unpkg.com/@zxing/library@0.21.0/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script type="module" src="/src/ui/live-manual.js"></script> 
+    <script src="/public/config.js"></script>
+    <script type="module" src="/src/ui/scanner.js"></script> 
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/public/sw.js');

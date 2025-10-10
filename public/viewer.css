@@ -99,3 +99,17 @@ h1 { text-align: center; margin-bottom: 24px; }
     height: 20px;
     cursor: pointer;
 }
+.approve-btn {
+    background-color: #166534; /* Dark Green */
+    border-color: #15803d;
+    font-weight: bold;
+}
+
+.approve-btn:disabled {
+    background-color: #14532d;
+    opacity: 0.7;
+}
+
+.scan-card.approved {
+    border-color: #22c55e; /* Bright Green Border */
+}

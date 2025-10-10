@@ -2,8 +2,8 @@
 
 import { app } from "../core/firebase.js";
 import {
-  getFirestore, collection, query, orderBy, limit, onSnapshot,
-  doc, deleteDoc, getDocs, writeBatch
+  getFirestore, collection, query, where, orderBy, limit, onSnapshot, // Add 'where'
+  doc, deleteDoc, getDocs, writeBatch, updateDoc, runTransaction // Add runTransaction for safe updates
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
 const db = getFirestore(app);
@@ -24,28 +24,36 @@ function createCardElement(docId, data) {
     const card = document.createElement("div");
     card.className = "scan-card";
     card.dataset.id = docId;
+    // NEW: Add a class if the scan is already approved
+    if (data.status === 'approved') {
+        card.classList.add('approved');
+    }
 
-    // User Name Tag
-    const userName = data.userName || "Unknown User";
-    const userTag = document.createElement("div");
-    userTag.className = "card-brand-tag"; // We can reuse this style
-    userTag.textContent = userName;
-    card.appendChild(userTag);
+    // Brand Tag (using diagnostics.brandProfileUsed)
+    const brand = data.diagnostics?.brandProfileUsed;
+    if (brand) {
+        const brandTag = document.createElement("div");
+        brandTag.className = "card-brand-tag";
+        brandTag.textContent = brand;
+        card.appendChild(brandTag);
+    }
 
     const thumbnail = document.createElement("img");
     thumbnail.className = "card-thumbnail";
-    thumbnail.src = data.thumbnail || 'https://via.placeholder.com/350x200?text=No+Image';
+    thumbnail.src = data.thumb || 'https://via.placeholder.com/350x200?text=No+Image'; // Better placeholder
     card.appendChild(thumbnail);
     
     const body = document.createElement("div");
     body.className = "card-body";
 
+    // Checkbox for batch actions
     const chk = document.createElement("input");
     chk.type = "checkbox";
     chk.className = "card-checkbox pick";
     chk.dataset.id = docId;
     card.appendChild(chk);
 
+    // Info Row for Model and MS#
     const infoRow = document.createElement("div");
     infoRow.className = "card-info-row";
     infoRow.innerHTML = `
@@ -55,10 +63,11 @@ function createCardElement(docId, data) {
         </div>
         <div class="ms" style="text-align: right;">
             <div class="label">MS#</div>
-            <div class="value">${data.msNumber || "N/A"}</div>
+            <div class="value">${data.ms || "N/A"}</div>
         </div>
     `;
 
+    // Customer Info
     const customer = document.createElement("div");
     customer.className = "card-customer";
     customer.innerHTML = `
@@ -66,22 +75,88 @@ function createCardElement(docId, data) {
         <div class="value">${data.customer || "N/A"}</div>
     `;
 
+    // Details/Summary (Now includes Confidence and Motion)
     const details = document.createElement("div");
     details.className = "card-details";
-    const confidence = data.scanQuality?.confidence ?? 0;
-    const motion = data.scanQuality?.motion ?? 0;
+    const ocrConfidence = data.diagnostics?.ocrConfidence ?? 0;
+    const motionValue = data.diagnostics?.motion ?? 0;
 
     details.innerHTML = `
-        Time: ${formatTimestamp(data.timestamp)}<br>
-        Brand: ${data.brand || 'N/A'} · Conf: ${confidence}% · Motion: ${motion}
+        Time: ${formatTimestamp(data.ts)}<br>
+        Summary: conf ${ocrConfidence}% · motion ${motionValue}
+        <div class="raw-text-preview" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 80px; overflow: hidden; text-overflow: ellipsis; margin-top: 8px; color: var(--text-dark);">
+            ${(data.raw || "").replace(/</g, "&lt;")}
+        </div>
     `;
 
     body.appendChild(infoRow);
     body.appendChild(customer);
     body.appendChild(details);
 
+    // --- ACTIONS (MODIFIED) ---
     const actions = document.createElement("div");
     actions.className = "card-actions";
+    
+    // The "Approve" button
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "btn approve-btn";
+    approveBtn.textContent = "✔️ Approve";
+    
+    // If already approved, disable it and change text
+    if (data.status === 'approved') {
+        approveBtn.disabled = true;
+        approveBtn.textContent = "Approved";
+    }
+
+    approveBtn.onclick = async () => {
+        approveBtn.disabled = true;
+        approveBtn.textContent = "Learning...";
+        const scanRef = doc(db, "scans", docId);
+        
+        // --- START OF LEARNING LOGIC ---
+        try {
+            await runTransaction(db, async (transaction) => {
+                // 1. Mark the scan as approved
+                transaction.update(scanRef, { status: "approved" });
+
+                const brandName = data.diagnostics?.brandProfileUsed;
+                const cropRect = data.diagnostics?.cropRect;
+
+                // 2. Check if we have the necessary data to learn from
+                if (brandName && cropRect) {
+                    const profileQuery = query(collection(db, "brand_profiles"), where("brandName", "==", brandName));
+                    const profileSnapshot = await getDocs(profileQuery);
+
+                    if (!profileSnapshot.empty) {
+                        const profileDoc = profileSnapshot.docs[0];
+                        const profileRef = profileDoc.ref;
+                        const currentData = profileDoc.data().learnedData || {};
+                        const samples = currentData.dimensionSamples || [];
+
+                        // 3. Add the new dimension as a sample
+                        const newSample = { width: cropRect[2], height: cropRect[3] };
+                        samples.push(newSample);
+
+                        // 4. Keep only the last 20 samples to stay current
+                        while (samples.length > 20) {
+                            samples.shift();
+                        }
+                        
+                        // 5. Update the brand profile with the new learned data
+                        transaction.update(profileRef, { "learnedData.dimensionSamples": samples });
+                        console.log(`Updated profile for ${brandName} with new dimensions.`);
+                    }
+                }
+            });
+        } catch (error) {
+            console.error("Transaction failed: ", error);
+            alert("Could not approve and learn from this scan. See console for details.");
+            approveBtn.disabled = false;
+            approveBtn.textContent = "✔️ Approve";
+        }
+        // --- END OF LEARNING LOGIC ---
+    };
+
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "btn";
     deleteBtn.textContent = "Delete";
@@ -92,12 +167,14 @@ function createCardElement(docId, data) {
     };
     
     actions.appendChild(deleteBtn);
+    actions.appendChild(approveBtn); // Add the new button
 
     card.appendChild(body);
     card.appendChild(actions);
 
     return card;
 }
+
 // Listen for real-time updates from Firestore
 onSnapshot(query(collection(db, "scans"), orderBy("ts", "desc"), limit(100)), (snapshot) => {
     scanGrid.innerHTML = ""; // Clear existing cards

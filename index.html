@@ -1,70 +1,34 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>DockScan</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
-  <link rel="stylesheet" href="styles.css" />
-  <!-- ZXing (barcode fallback) -->
-  <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
-  <!-- Tesseract (OCR) -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <a class="btn" href="live.html">Live mode</a>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DockScan - Login</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <header class="topbar">
-    <h1>DockScan</h1>
-    <div class="controls">
-      <button id="lgToggle" class="btn pill on">LG priority mode</button>
-      <label class="btn">
-        <input id="fileInput" type="file" accept="image/*" capture="environment" multiple hidden />
-
-        Browse…
-      </label>
-      <button id="clearBtn" class="btn ghost">Clear</button>
-      <button id="csvBtn" class="btn ghost" disabled>Export CSV</button>
+<body class="centered-page-container">
+    <div class="login-container">
+        <h1>DockScan Login</h1>
+       <div class="form-group" id="name-group" style="display: none;">
+            <label for="displayName">Display Name</label>
+            <input type="text" id="displayName">
+        </div>
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" required>
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" required>
+        </div>
+        <div id="error-message"></div>
+        <div class="btn-group">
+            <button id="btnLogin" class="btn">Login</button>
+            <button id="btnCreateAccount" class="btn ghost">Create Account</button>
+        </div>
     </div>
-  </header>
 
-  <main>
-    <section id="dropZone" class="drop">
-      <div class="drop-content">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-        <p>Drop label photos here or <b>Browse</b></p>
-        <small id="concurrencyBadge"></small>
-      </div>
-    </section>
-
-    <section class="progressbar">
-      <div id="progressInner"></div>
-    </section>
-
-    <section class="results-container">
-      <table class="grid">
-        <thead>
-        <tr>
-          <th>#</th><th>File</th><th>MS#</th><th>Status</th><th>Raw (first 180 chars)</th>
-        </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </section>
-  </main>
-
-  <footer class="foot">
-    <small>Local only · Nothing leaves your browser</small>
-  </footer>
-
-  <div id="rawModal" class="modal-overlay hidden">
-    <div class="modal-content">
-      <button id="modalCloseBtn" class="modal-close">&times;</button>
-      <h3>Full OCR Raw Text</h3>
-      <pre id="modalRawText"></pre>
-    </div>
-  </div>
-
-  <script type="module" src="./src/main.js"></script>
+    <script src="/public/config.js"></script>
+    <script type="module" src="/src/auth.js"></script>
 </body>
 </html>

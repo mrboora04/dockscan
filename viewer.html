@@ -4,22 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DockScan - Viewer</title>
-    <link rel="stylesheet" href="/public/viewer.css">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-
-    <h1>DockScan - Live Scans</h1>
-
-    <div class="controls">
-        <a href="/live.html" class="btn primary">Open Scanner</a>
-        <button id="btnDelSel" class="btn">Delete selected</button>
-        <button id="btnClearAll" class="btn">Clear all</button>
-    </div>
-
-    <div id="scan-grid" class="scan-grid">
+    <header class="viewer-header">
+        <div class="viewer-title">
+            <input type="checkbox" id="chkAll" class="select-all-checkbox">
+            <h1>Scan Viewer</h1>
         </div>
+        <div class="controls">
+            <a href="/main-menu.html" class="btn ghost">
+                <i data-lucide="home"></i>
+                <span>Main Menu</span>
+            </a>
+            <a href="/scanner.html?mode=manual" class="btn primary">
+                <i data-lucide="camera"></i>
+                <span>New Scan</span>
+            </a>
+            <button id="btnDelSel" class="btn">
+                <i data-lucide="trash-2"></i>
+                <span>Delete Selected</span>
+            </button>
+            <button id="btnClearAll" class="btn ghost">
+                <i data-lucide="shield-x"></i>
+                <span>Clear All</span>
+            </button>
+        </div>
+    </header>
 
-    <script type="module" src="/src/ui/viewer.js" defer></script>
+    <main id="scan-grid" class="scan-grid">
+        </main>
 
+    <script src="/public/config.js"></script>
+    <script type="module" src="/src/ui/viewer.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
 </body>
 </html>

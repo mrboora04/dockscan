@@ -1,5 +1,3 @@
-// src/ui/scanner.js
-
 import { makeLiveCapture } from "../vision/live-capture.js";
 import { runScanAnalysis } from "../vision/scanner-logic.js";
 import { saveScan } from "../core/store.js";
@@ -7,10 +5,9 @@ import { processImageForScanning } from "../vision/image-processor.js";
 import { getFirestore, doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { app } from "../core/firebase.js";
 
-// --- NEW: Mode Detection ---
 const urlParams = new URLSearchParams(window.location.search);
-const SCAN_MODE = urlParams.get('mode') || 'manual'; // Default to 'manual' if not specified
-// ---
+const SCAN_MODE = urlParams.get('mode') || 'manual';
+const PRE_SELECTED_BRAND = urlParams.get('brand');
 
 const db = getFirestore(app);
 const v = document.getElementById("cam");
@@ -22,11 +19,9 @@ const brandSelector = document.getElementById("brand-selector");
 const zoomCtl = document.getElementById("zoomCtl");
 const zoomBtns = [...document.querySelectorAll(".zoom-btn")];
 
-// --- MODIFIED: Start the camera as soon as the page loads ---
 let cap = null, loop = null, busy = false, frozen = false, prev = null;
 let activeProfile = null;
 let stagedScan = null;
-// ---
 
 const ocrWorker = await Tesseract.createWorker("eng", 1);
 await ocrWorker.setParameters({
@@ -39,59 +34,112 @@ function setActive(btn) { zoomBtns.forEach(b => b.classList.toggle("on", b === b
 function downsample(canvas) { const W=160,H=120,c=document.createElement("canvas");c.width=W;c.height=H;const g=c.getContext("2d",{willReadFrequently:true});g.drawImage(canvas,0,0,W,H);const d=g.getImageData(0,0,W,H).data;const out=new Uint8Array(W*H);for(let i=0,j=0;i<d.length;i+=4,j++){out[j]=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0}return out;}
 function delta(a, b) { if(!a||!b)return 1;let s=0;for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);return s/(a.length*255)}
 
-async function populateBrandSelector() { /* ... same as live.js ... */ }
-async function loadBrandProfile(brandId) { /* ... same as live.js ... */ }
+async function populateBrandSelector() {
+    const profilesSnap = await getDocs(collection(db, "brand_profiles"));
+    brandSelector.innerHTML = '';
+    profilesSnap.forEach(doc => {
+        const profile = doc.data();
+        const btn = document.createElement("button");
+        btn.className = "btn ghost";
+        btn.textContent = profile.brandName;
+        btn.onclick = () => {
+            document.querySelectorAll('#brand-selector button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadBrandProfile(doc.id);
+        };
+        brandSelector.appendChild(btn);
+
+        // If a brand was pre-selected from the menu, activate its button
+        if (PRE_SELECTED_BRAND && PRE_SELECTED_BRAND === doc.id) {
+            btn.click();
+        }
+    });
+}
+
+async function loadBrandProfile(brandId) {
+    stagedScan = null;
+    activeProfile = null;
+    uiLight(window.getComputedStyle(box).borderColor, `Loading ${brandId} profile...`);
+    try {
+        const profileDoc = await getDoc(doc(db, "brand_profiles", brandId));
+        if (profileDoc.exists()) {
+            activeProfile = profileDoc.data();
+            uiLight(window.getComputedStyle(box).borderColor, `Ready for ${activeProfile.brandName}`);
+        }
+    } catch (e) { console.error("Error loading profile", e); }
+}
 
 async function analyzeAndSave(canvas, motion) {
     if (frozen) return;
-    if (!activeProfile) {
-        uiLight("#ef4444", "Please select a brand first!");
+
+    if (SCAN_MODE === 'auto' && !activeProfile) {
+        uiLight("#ef4444", "Please select a brand for Auto Scan!");
         await new Promise(r => setTimeout(r, 1500));
-        uiLight("#34d399", `Select a brand to begin. [${SCAN_MODE.toUpperCase()} MODE]`);
+        uiLight("#34d399", `Select a brand to begin. [AUTO MODE]`);
         return;
     }
     frozen = true;
     uiLight("#1d4ed8", "Processing...");
 
-    const isInDualLabelModelSearch = (activeProfile.logicType === 'dual_label' && stagedScan);
-    if (isInDualLabelModelSearch) {
-        await ocrWorker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE });
-    }
-
     const result = await runScanAnalysis(canvas, activeProfile, ocrWorker, motion);
 
-    if (isInDualLabelModelSearch) {
-        await ocrWorker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT });
-    }
+    // Handle Dual Label Logic (for LG)
+    if (activeProfile?.logicType === 'dual_label') {
+        const isShippingLabel = result && result.ms && !result.model;
+        const isProductLabel = result && result.model && !result.ms;
 
-    if (activeProfile.logicType === 'dual_label') {
-        // ... dual-label logic remains the same
-    } else { // Single-label logic
+        if (isShippingLabel && !stagedScan) {
+            stagedScan = { ...result, thumb: canvas.toDataURL("image/jpeg", 0.7) };
+            uiLight("#22c55e", `STAGED: MS# ${stagedScan.ms}. Now scan MODEL label.`);
+            frozen = false;
+            return;
+        }
+        
+        if (isProductLabel && stagedScan) {
+            const finalScan = { ...stagedScan, ...result, raw: `${stagedScan.raw}\n---\n${result.raw}` };
+            await saveScan(finalScan);
+            uiLight("#22c55e", `Success! Complete ${activeProfile.brandName} scan saved.`);
+            stagedScan = null;
+            await new Promise(r => setTimeout(r, 2000));
+            frozen = false;
+            return;
+        }
+    } else { // Handle Single Label Logic
         if (result) {
             await saveScan({ ...result, raw: result.raw.slice(0, 300) });
-            uiLight("#22c55e", `Saved: ${result.model || result.ms}`);
+            const savedItem = result.model || result.ms || 'Scan';
+            uiLight("#22c55e", `Saved: ${savedItem}`);
             await new Promise(r => setTimeout(r, 1200));
         }
     }
 
-    if (!result) {
+    if (!result && !stagedScan) { // Don't show "not found" if a scan is staged
         uiLight("#f59e0b", "Scan again. Aim for key info.");
         await new Promise(r => setTimeout(r, 1000));
     }
+    
     frozen = false;
 }
 
 async function tick() {
-    if (busy || frozen || v.videoWidth === 0 || !cap || !activeProfile) return;
+    if (busy || frozen || v.videoWidth === 0 || !cap) return;
+    
+    // In AUTO mode, we need a brand selected to do anything. In MANUAL, we don't.
+    if (SCAN_MODE === 'auto' && !activeProfile) {
+        return;
+    }
+
     busy = true;
     try {
         const crop = await cap.grabCropCanvas();
         const m = delta(downsample(crop), prev);
         prev = downsample(crop);
         const { guidance } = processImageForScanning(crop, m);
-        if (!stagedScan) { uiLight(guidance.color, guidance.text); }
         
-        // --- NEW: Only auto-capture in 'auto' mode ---
+        if (!stagedScan) {
+            uiLight(guidance.color, guidance.text);
+        }
+        
         if (SCAN_MODE === 'auto' && guidance.qualityOK && m < 0.06) {
             setTimeout(() => { if (!frozen) analyzeAndSave(crop, m); }, 150);
         }
@@ -102,21 +150,30 @@ async function tick() {
 async function start() {
     if (loop) return;
     try {
-        uiLight("#f59e0b", `Requesting camera... [${SCAN_MODE.toUpperCase()} MODE]`);
+        uiLight(getComputedStyle(box).borderColor, `Requesting camera...`);
         cap = await makeLiveCapture(v, box);
         const caps = cap.caps || {};
         if (caps.zoom) {
-            const min = caps.zoom.min ?? 1, max = caps.zoom.max ?? 3;
-            const map = { "1": min, "2": min + (max - min) * 0.5, "3": max };
-            zoomCtl.style.display = 'flex';
-            for (const b of zoomBtns) {
-                b.onclick = async (e) => { await cap.setZoom(map[e.target.dataset.z]); setActive(e.target); };
-            }
-            setActive(zoomBtns[0]);
+          const min = caps.zoom.min ?? 1, max = caps.zoom.max ?? 3;
+          const map = { "1": min, "2": min + (max - min) * 0.5, "3": max };
+          zoomCtl.style.display = 'flex';
+          for (const b of zoomBtns) {
+            b.onclick = async (e) => { await cap.setZoom(map[e.target.dataset.z]); setActive(e.target); };
+          }
+          setActive(zoomBtns[0]);
         }
+        
         loop = setInterval(tick, 250);
-        await populateBrandSelector(); // Populate brands after camera starts
-        uiLight("#34d399", `Select a brand to begin. [${SCAN_MODE.toUpperCase()} MODE]`);
+        
+        // Only show brand selector in Auto mode
+        if (SCAN_MODE === 'auto') {
+            await populateBrandSelector();
+            brandSelector.style.display = 'flex';
+            uiLight("#34d399", `Select a brand to begin. [AUTO MODE]`);
+        } else {
+            brandSelector.style.display = 'none';
+            uiLight("#34d399", `Ready to scan. [MANUAL MODE]`);
+        }
     } catch (e) {
         hud.innerHTML = `<b>Camera error. Please grant permission.</b>`;
     }
@@ -126,17 +183,15 @@ function stop() {
     if (loop) { clearInterval(loop); loop = null; }
     if (v.srcObject) { v.srcObject.getTracks().forEach(t => t.stop()); v.srcObject = null; }
     cap = null; frozen = false; prev = null; stagedScan = null;
-    window.location.href = '/main-menu.html'; // Go back to menu when stopped
+    window.location.href = '/main-menu.html';
 }
 
-// Event Listeners
-btnStop.addEventListener("click", stop);
 shutterBtn.addEventListener("click", async () => {
     if (!cap || frozen) return;
     const crop = await cap.grabCropCanvas(); 
-    await analyzeAndSave(crop, 0); // Manual capture always works
+    await analyzeAndSave(crop, 0);
 });
+btnStop.addEventListener("click", stop);
 window.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
 
-// Auto-start the camera on page load
 start();

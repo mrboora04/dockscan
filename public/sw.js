@@ -1,4 +1,4 @@
-﻿// public/sw.js
+// public/sw.js
 
 // NEW: Updated cache version to force a refresh
 const CACHE_NAME = "dockscan-v3";

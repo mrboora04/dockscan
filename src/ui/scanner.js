@@ -36,7 +36,7 @@ const ocrWorkerPromise = (async () => {
 })();
 
 function uiLight(color, msg) { box.style.borderColor = color; hud.textContent = msg; }
-function setActive(btn) { zoomBtns.forEach(b => b.classList.toggle("on", b => b.classList.toggle("on", b === btn))); }
+function setActive(btn) { zoomBtns.forEach(b => b.classList.toggle("on", b === btn)); }
 function downsample(canvas) { const W=160,H=120,c=document.createElement("canvas");c.width=W;c.height=H;const g=c.getContext("2d",{willReadFrequently:true});g.drawImage(canvas,0,0,W,H);const d=g.getImageData(0,0,W,H).data;const out=new Uint8Array(W*H);for(let i=0,j=0;i<d.length;i+=4,j++){out[j]=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0}return out;}
 function delta(a, b) { if(!a||!b)return 1;let s=0;for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);return s/(a.length*255)}
 

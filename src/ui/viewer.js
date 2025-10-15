@@ -1,4 +1,4 @@
-﻿import { app } from "../core/firebase.js";
+import { app } from "../core/firebase.js";
 import {
   getFirestore, collection, query, where, orderBy, limit, onSnapshot,
   doc, deleteDoc, getDocs, writeBatch, runTransaction

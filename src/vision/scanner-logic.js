@@ -5,6 +5,10 @@ import { runLabelDetector } from "./specialists/label-detector.js";
 import { extractInfoFromRegions } from "./specialists/info-extractor.js"; // <-- NEW IMPORT
 import { extractMs, extractCustomer, extractModel } from "../extractors.js"; // <-- KEEP FALLBACKS
 
+// Constants for thumbnail generation
+const THUMBNAIL_WIDTH = 160;
+const THUMBNAIL_QUALITY = 0.6;
+
 // Helper to get rect array [x,y,w,h] from crop canvas size
 function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; }
 
@@ -17,15 +21,14 @@ function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; 
 function generateThumbnail(sourceCanvas, rect) {
     const [x, y, w, h] = rect;
     const c = document.createElement('canvas');
-    const THUMB_W = 160;
-    const scale = THUMB_W / w;
+    const scale = THUMBNAIL_WIDTH / w;
     
-    c.width = THUMB_W;
+    c.width = THUMBNAIL_WIDTH;
     c.height = h * scale;
 
     const ctx = c.getContext('2d');
     ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', 0.6); 
+    return c.toDataURL('image/jpeg', THUMBNAIL_QUALITY); 
 }
 
 /**

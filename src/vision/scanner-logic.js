@@ -9,6 +9,26 @@ import { extractMs, extractCustomer, extractModel } from "../extractors.js"; // 
 function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; }
 
 /**
+ * Generate a thumbnail from a source canvas and rect
+ * @param {HTMLCanvasElement} sourceCanvas - The source canvas
+ * @param {Array<number>} rect - [x, y, w, h] array
+ * @returns {string} Data URL of the thumbnail
+ */
+function generateThumbnail(sourceCanvas, rect) {
+    const [x, y, w, h] = rect;
+    const c = document.createElement('canvas');
+    const THUMB_W = 160;
+    const scale = THUMB_W / w;
+    
+    c.width = THUMB_W;
+    c.height = h * scale;
+
+    const ctx = c.getContext('2d');
+    ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.6); 
+}
+
+/**
  * Executes a full scan analysis in the Live Mode.
  * @param {HTMLCanvasElement} canvas - The cropped image captured from the camera.
  * @param {object} activeProfile - The brand profile data.
@@ -21,9 +41,12 @@ export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) 
     const originalThumb = canvas.toDataURL("image/jpeg", 0.7);
     const motionValue = +motion.toFixed(3);
     
+    // Convert canvas to Blob for the Label Detector (it expects File/Blob, not Canvas)
+    const canvasBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+    
     // Step 1: Run Label Detector Specialist to get primary ROI and suggestions
     // NOTE: cropSuggestions is now CORRECTLY used later.
-    const { primaryRect, det, cropSuggestions } = await runLabelDetector(canvas, activeProfile); 
+    const { primaryRect, det, cropSuggestions } = await runLabelDetector(canvasBlob, activeProfile); 
     
     // Fallback: If no label was found, use the full canvas as the primary rect (Live Mode)
     const rectToUse = primaryRect || { x: 0, y: 0, width: canvas.width, height: canvas.height };

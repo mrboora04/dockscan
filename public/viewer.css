@@ -8,6 +8,7 @@
     --text-secondary: #6d6d72;
     --accent-color: #007aff;
     --success-color: #34c759; /* New: Success color for approved scans */
+    --fail-color: #ef4444; /* Add this line */
 }
 
 html, body {
@@ -121,6 +122,15 @@ html, body {
 .scan-card.approved {
     border-color: var(--success-color);
     box-shadow: 0 0 10px rgba(52, 199, 89, 0.5); /* Green glow for approved */
+}
+.scan-card.rejected {
+    border-color: var(--fail-color);
+    opacity: 0.6; /* Dim rejected cards */
+}
+.reject-btn { 
+    background-color: var(--fail-color);
+    border-color: var(--fail-color);
+    color: white;
 }
 
 /* Info and Actions */

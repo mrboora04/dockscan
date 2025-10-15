@@ -1,7 +1,7 @@
 import { makeLiveCapture } from "../vision/live-capture.js";
 import { runScanAnalysis } from "../vision/scanner-logic.js";
 import { saveScan } from "../core/store.js";
-import { processImageForScanning } from "../vision/image-processor.js";
+import { processImageForScanning } from "../vision/image-processor.js"; // Used for guidance logic
 import { getFirestore, doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { app ,auth} from "../core/firebase.js";
 
@@ -30,7 +30,7 @@ await ocrWorker.setParameters({
 });
 
 function uiLight(color, msg) { box.style.borderColor = color; hud.textContent = msg; }
-function setActive(btn) { zoomBtns.forEach(b => b.classList.toggle("on", b === btn)); }
+function setActive(btn) { zoomBtns.forEach(b => b.classList.toggle("on", b => b.classList.toggle("on", b === btn))); }
 function downsample(canvas) { const W=160,H=120,c=document.createElement("canvas");c.width=W;c.height=H;const g=c.getContext("2d",{willReadFrequently:true});g.drawImage(canvas,0,0,W,H);const d=g.getImageData(0,0,W,H).data;const out=new Uint8Array(W*H);for(let i=0,j=0;i<d.length;i+=4,j++){out[j]=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0}return out;}
 function delta(a, b) { if(!a||!b)return 1;let s=0;for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);return s/(a.length*255)}
 
@@ -45,26 +45,25 @@ async function populateBrandSelector() {
         btn.onclick = () => {
             document.querySelectorAll('#brand-selector button').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            loadBrandProfile(doc.id);
+            loadBrandProfile(doc.id, profile.brandName); // Pass name for better UI messaging
         };
         brandSelector.appendChild(btn);
 
-        // If a brand was pre-selected from the menu, activate its button
         if (PRE_SELECTED_BRAND && PRE_SELECTED_BRAND === doc.id) {
             btn.click();
         }
     });
 }
 
-async function loadBrandProfile(brandId) {
+async function loadBrandProfile(brandId, brandName) {
     stagedScan = null;
     activeProfile = null;
-    uiLight(window.getComputedStyle(box).borderColor, `Loading ${brandId} profile...`);
+    uiLight(window.getComputedStyle(box).borderColor, `Loading ${brandName} profile...`);
     try {
         const profileDoc = await getDoc(doc(db, "brand_profiles", brandId));
         if (profileDoc.exists()) {
-            activeProfile = profileDoc.data();
-            uiLight(window.getComputedStyle(box).borderColor, `Ready for ${activeProfile.brandName}`);
+            activeProfile = { id: brandId, brandName, ...profileDoc.data() };
+            uiLight("#34d399", `Ready for ${activeProfile.brandName}`);
         }
     } catch (e) { console.error("Error loading profile", e); }
 }
@@ -82,45 +81,32 @@ async function analyzeAndSave(canvas, motion) {
     frozen = true;
     uiLight("#1d4ed8", "Processing...");
 
-    const result = await runScanAnalysis(canvas, activeProfile, ocrWorker, motion);
+    try {
+        // 1. Call the Specialist Coordinator
+        const result = await runScanAnalysis(canvas, activeProfile, ocrWorker, motion);
 
-    // --- THIS IS THE FIX ---
-    // Map the result from our specialist to the schema your store.js expects.
-    const scanDataForDb = {
-        msNumber: result.ms,
-        model: result.model,
-        customer: result.customer,
-        brand: result.diagnostics.brandProfileUsed,
-        thumbnail: result.thumb,
-        rawText: result.raw,
-        scanQuality: { // The diagnostics object becomes the scanQuality object
-            confidence: result.diagnostics.ocrConfidence,
-            motionDetected: result.diagnostics.motion > 0.08,
-            smartCropUsed: result.diagnostics.smartCropUsed,
-            cropRect: result.diagnostics.cropRect,
-        },
-        userName: auth.currentUser?.email || "Unknown" // Get the user's email
-    };
-    
-    // Now we save the correctly formatted data.
-    await saveScan(scanDataForDb);
-    // --- END OF FIX ---
+        // 2. CRITICAL FIX: Pass the V2 compliant result object directly to saveScan.
+        await saveScan(result);
 
-    if (result.diagnostics.smartCropUsed) {
-        const savedItem = result.model || result.ms || 'Label Scan';
-        uiLight("#22c55e", `Saved: ${savedItem}`);
-    } else {
-        uiLight("#f59e0b", `Saved full image for review.`);
+        // 3. Update UI based on successful save
+        if (result.model || result.ms) {
+            const savedItem = result.model || result.ms || 'Label Scan';
+            uiLight("#22c55e", `Saved: ${savedItem}`);
+        } else {
+            uiLight("#f59e0b", `Saved full image for review.`);
+        }
+    } catch (e) {
+        console.error("Analysis/Save failed:", e);
+        uiLight("#ef4444", `Error: See console.`);
+    } finally {
+        await new Promise(r => setTimeout(r, 1500));
+        frozen = false;
     }
-    
-    await new Promise(r => setTimeout(r, 1500));
-    
-    frozen = false;
 }
+
 async function tick() {
     if (busy || frozen || v.videoWidth === 0 || !cap) return;
     
-    // In AUTO mode, we need a brand selected to do anything. In MANUAL, we don't.
     if (SCAN_MODE === 'auto' && !activeProfile) {
         return;
     }
@@ -130,7 +116,9 @@ async function tick() {
         const crop = await cap.grabCropCanvas();
         const m = delta(downsample(crop), prev);
         prev = downsample(crop);
-        const { guidance } = processImageForScanning(crop, m);
+        
+        // Use the existing image processor for guidance until Condition Specialist is fully implemented
+        const { guidance } = processImageForScanning(crop, m); 
         
         if (!stagedScan) {
             uiLight(guidance.color, guidance.text);
@@ -150,18 +138,17 @@ async function start() {
         cap = await makeLiveCapture(v, box);
         const caps = cap.caps || {};
         if (caps.zoom) {
-          const min = caps.zoom.min ?? 1, max = caps.zoom.max ?? 3;
-          const map = { "1": min, "2": min + (max - min) * 0.5, "3": max };
-          zoomCtl.style.display = 'flex';
-          for (const b of zoomBtns) {
-            b.onclick = async (e) => { await cap.setZoom(map[e.target.dataset.z]); setActive(e.target); };
-          }
-          setActive(zoomBtns[0]);
+            const min = caps.zoom.min ?? 1, max = caps.zoom.max ?? 3;
+            const map = { "1": min, "2": min + (max - min) * 0.5, "3": max };
+            zoomCtl.style.display = 'flex';
+            for (const b of zoomBtns) {
+                b.onclick = async (e) => { await cap.setZoom(map[e.target.dataset.z]); setActive(e.target); };
+            }
+            setActive(zoomBtns[0]);
         }
         
         loop = setInterval(tick, 250);
         
-        // Only show brand selector in Auto mode
         if (SCAN_MODE === 'auto') {
             await populateBrandSelector();
             brandSelector.style.display = 'flex';
@@ -184,6 +171,15 @@ function stop() {
 
 shutterBtn.addEventListener("click", async () => {
     if (!cap || frozen) return;
+    
+    // Only require brand selection in Auto mode, but prompt in Manual if no active profile
+    if (SCAN_MODE === 'auto' && !activeProfile) {
+        uiLight("#ef4444", "Please select a brand first!");
+        await new Promise(r => setTimeout(r, 1500));
+        uiLight("#34d399", `Select a brand to begin. [AUTO MODE]`);
+        return;
+    }
+    
     const crop = await cap.grabCropCanvas(); 
     await analyzeAndSave(crop, 0);
 });

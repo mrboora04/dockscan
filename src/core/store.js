@@ -1,41 +1,23 @@
-﻿import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+﻿// src/core/store.js
+import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { app, auth } from "./firebase.js";
-
 const db = getFirestore(app);
 
-/**
- * Saves a scan record to Firestore, adhering to the application's data schema.
- * @param {object} scanData - An object containing all the scan details.
- */
 export async function saveScan({
-  msNumber = "",
-  model = "",
-  customer = "",
-  brand = "",
-  thumbnail = "",
-  rawText = "",
-  wasCorrected = false,
-  scanQuality = {},
-  userName = ""
+  ms, customer = "", model = "", brand = "",
+  raw = "",                 // short raw snippet
+  thumb = "",               // data URL (small JPEG)
+  // Diagnostics from the Specialist Architecture (formerly individual fields)
+  scanQuality = {},         // { confidence: 0, motion: 0, cropRect: [x,y,w,h], smartCropUsed: false, ... }
+  trainingData = {},        // { cropSuggestions: [ {rect, thumb}, ... ], approvedRect: [x,y,w,h], ... }
 }) {
   return addDoc(collection(db, "scans"), {
-    // Core Data
-    msNumber,
-    model,
-    customer,
-
-    // IDs
-    userId: auth.currentUser?.uid || null,
-    userName: userName,
-
-    // Metadata
-    timestamp: serverTimestamp(),
-    brand,
-    thumbnail,
-    wasCorrected,
-
-    // Training & Debug Data
+    ms, customer, model, brand, raw, thumb,
     scanQuality,
-    rawText,
+    trainingData,
+    status: "pending", // All new scans start as pending for review
+    by: auth.currentUser?.uid || null,
+    timestamp: serverTimestamp(), // Use 'timestamp' for consistency with viewer.js orderBy
+    mode: "live"
   });
 }

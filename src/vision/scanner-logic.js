@@ -1,60 +1,103 @@
-import { findLabelRect } from "./specialists/label-detector.js";
-import { extractInfoFromRegions } from "./specialists/info-extractor.js";
-import { extractMs, extractCustomer, extractModel } from "./extractors.js";
+// src/vision/scanner-logic.js
+// This file coordinates the specialists and maps the final result to the V2 schema.
 
-// A helper function to convert the canvas to a format our specialist can use
-function canvasToBlob(canvas, type = 'image/jpeg', quality = 0.9) {
-    return new Promise(resolve => canvas.toBlob(resolve, type, quality));
-}
+import { runLabelDetector } from "./specialists/label-detector.js";
+import { extractInfoFromRegions } from "./specialists/info-extractor.js"; // <-- NEW IMPORT
+import { extractMs, extractCustomer, extractModel } from "../extractors.js"; // <-- KEEP FALLBACKS
 
+// Helper to get rect array [x,y,w,h] from crop canvas size
+function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; }
+
+/**
+ * Executes a full scan analysis in the Live Mode.
+ * @param {HTMLCanvasElement} canvas - The cropped image captured from the camera.
+ * @param {object} activeProfile - The brand profile data.
+ * @param {object} ocrWorker - The active Tesseract worker instance.
+ * @param {number} motion - The calculated motion value.
+ * @returns {Promise<object>} The full scan result adhering to the V2 Firestore schema.
+ */
 export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) {
-    // Step 1: Call the Label Detector Specialist
-    const analysisBlob = await canvasToBlob(canvas);
-    const smartRect = await findLabelRect(analysisBlob);
+    const brandName = activeProfile?.brandName || 'Generic';
+    const originalThumb = canvas.toDataURL("image/jpeg", 0.7);
+    const motionValue = +motion.toFixed(3);
+    
+    // Step 1: Run Label Detector Specialist to get primary ROI and suggestions
+    // NOTE: cropSuggestions is now CORRECTLY used later.
+    const { primaryRect, det, cropSuggestions } = await runLabelDetector(canvas, activeProfile); 
+    
+    // Fallback: If no label was found, use the full canvas as the primary rect (Live Mode)
+    const rectToUse = primaryRect || { x: 0, y: 0, width: canvas.width, height: canvas.height };
+    const rectArrayToUse = [rectToUse.x, rectToUse.y, rectToUse.width, rectToUse.height];
 
-    // --- THIS IS THE KEY CHANGE ---
-    // If the specialist fails, we DON'T give up. We create a "failure" record.
-    if (!smartRect) {
-        console.log("Label detector failed. Saving full image for review.");
-        // We still create a result, but with no cropped data and a full-frame thumbnail.
-        return {
-            ms: "", model: "", customer: "", raw: "No label found.",
-            thumb: canvas.toDataURL("image/jpeg", 0.7), // Use the original, full canvas
-            diagnostics: {
-                brandProfileUsed: activeProfile?.brandName || 'Generic',
-                motion: +motion.toFixed(3),
-                smartCropUsed: false, // Explicitly mark that the crop failed
-                cropRect: null,
-                ocrConfidence: 0
-            }
-        };
-    }
-
-    // --- This part of the code now only runs if a label WAS found ---
+    // Step 2: Crop image to primary ROI
     const labelCanvas = document.createElement('canvas');
-    labelCanvas.width = smartRect.width;
-    labelCanvas.height = smartRect.height;
+    labelCanvas.width = rectToUse.width;
+    labelCanvas.height = rectToUse.height;
     const ctx = labelCanvas.getContext('2d');
-    ctx.drawImage(canvas, smartRect.x, smartRect.y, smartRect.width, smartRect.height, 0, 0, labelCanvas.width, labelCanvas.height);
+    
+    // Draw the cropped region from the source canvas
+    ctx.drawImage(canvas, 
+        rectToUse.x, rectToUse.y, rectToUse.width, rectToUse.height, 
+        0, 0, labelCanvas.width, labelCanvas.height
+    );
 
+    // --- Core Extraction ---
+
+    // A. Full OCR for raw text and overall confidence (Run once for efficiency)
     const { data: ocrData } = await ocrWorker.recognize(labelCanvas);
-    const ms = extractMs(ocrData, activeProfile);
-    const model = extractModel(ocrData, activeProfile);
-    const customer = extractCustomer(ocrData, activeProfile);
+    const ocrConfidence = Math.round(ocrData.confidence);
+    
+    // B. Targeted Extraction via Info Extractor Specialist
+    let targetedFields = {};
+    try {
+        targetedFields = await extractInfoFromRegions(labelCanvas, activeProfile, ocrWorker);
+    } catch (e) {
+        console.warn("Info Extractor (Zone OCR) failed:", e);
+    }
+    
+    // C. Combine Results: Prioritize targeted extraction, fallback to full text extraction
+    const msFallback = extractMs(ocrData, activeProfile);
+    const modelFallback = extractModel(ocrData, activeProfile);
+    const customerFallback = extractCustomer(ocrData, activeProfile);
 
-    const diagnostics = {
-        brandProfileUsed: activeProfile?.brandName || 'Generic',
-        foundMs: !!ms, foundModel: !!model, foundCustomer: !!customer,
-        ocrConfidence: ocrData.confidence,
-        motion: +motion.toFixed(3),
-        smartCropUsed: true,
-        cropRect: [smartRect.x, smartRect.y, smartRect.width, smartRect.height],
-    };
+    const ms = targetedFields.ms || msFallback;
+    const model = targetedFields.model || modelFallback;
+    const customer = targetedFields.customer || customerFallback;
+
+    // Step 4: Map result to V2 Schema (Critical step for Training Hub)
+    
+    // CRITICAL FIX: Generate thumbnails for ALL suggestions from the Label Detector
+    const finalizedCropSuggestions = cropSuggestions.map(s => ({
+        rect: s.rect,
+        thumb: generateThumbnail(canvas, s.rect), // Use the new helper here
+        source: s.source || 'unknown'
+    }));
+
+    // Add the original full-frame image as the last suggestion for manual review fallback
+    finalizedCropSuggestions.push({ 
+        rect: getCropRectArray(canvas), 
+        thumb: originalThumb, 
+        source: 'full_frame' 
+    });
 
     return {
-        ms: ms || "", model: model || "", customer: customer || "",
-        raw: ocrData.text,
-        thumb: labelCanvas.toDataURL("image/jpeg", 0.7), // The successful cropped thumbnail
-        diagnostics
+        ms: ms || "", 
+        model: model || "", 
+        customer: customer || "",
+        brand: brandName,
+        raw: ocrData.text || "No OCR text.",
+        thumb: originalThumb, // Use original frame for the main card thumbnail
+
+        scanQuality: { // V2 Schema: Diagnostics
+            confidence: ocrConfidence,
+            motion: motionValue,
+            cropRect: rectArrayToUse,
+            smartCropUsed: !!primaryRect,
+            barcodeRaw: det?.raw || '',
+        },
+        trainingData: { // V2 Schema: Supervisor Training Hub data
+            // USE the correctly finalized array
+            cropSuggestions: finalizedCropSuggestions
+        }
     };
 }

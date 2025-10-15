@@ -100,6 +100,7 @@ try {
     videoElement.srcObject = stream;
 } catch (error) {
     console.error('Camera access error:', error);
+    // displayError is a project-specific function for showing errors to users
     displayError('Unable to access camera. Please check permissions.');
 }
 ```

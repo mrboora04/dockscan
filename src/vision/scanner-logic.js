@@ -5,8 +5,39 @@ import { runLabelDetector } from "./specialists/label-detector.js";
 import { extractInfoFromRegions } from "./specialists/info-extractor.js"; // <-- NEW IMPORT
 import { extractMs, extractCustomer, extractModel } from "../extractors.js"; // <-- KEEP FALLBACKS
 
+// Constants for thumbnail generation
+const THUMBNAIL_WIDTH = 160;
+const THUMBNAIL_QUALITY = 0.6;
+const MIN_DIMENSION = 1; // Minimum width/height to avoid division by zero
+
 // Helper to get rect array [x,y,w,h] from crop canvas size
 function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; }
+
+/**
+ * Generate a thumbnail from a source canvas and rect
+ * @param {HTMLCanvasElement} sourceCanvas - The source canvas
+ * @param {Array<number>} rect - [x, y, w, h] array
+ * @returns {string} Data URL of the thumbnail
+ */
+function generateThumbnail(sourceCanvas, rect) {
+    const [x, y, w, h] = rect;
+    
+    // Safety check: ensure valid dimensions (min 1px to avoid division by zero or extreme scaling)
+    if (w < MIN_DIMENSION || h < MIN_DIMENSION) {
+        console.warn('Invalid rect dimensions for thumbnail generation:', rect);
+        return '';
+    }
+    
+    const c = document.createElement('canvas');
+    const scale = THUMBNAIL_WIDTH / w;
+    
+    c.width = THUMBNAIL_WIDTH;
+    c.height = Math.max(MIN_DIMENSION, h * scale);
+
+    const ctx = c.getContext('2d');
+    ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', THUMBNAIL_QUALITY); 
+}
 
 /**
  * Executes a full scan analysis in the Live Mode.
@@ -21,9 +52,12 @@ export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) 
     const originalThumb = canvas.toDataURL("image/jpeg", 0.7);
     const motionValue = +motion.toFixed(3);
     
+    // Convert canvas to Blob for the Label Detector (it expects File/Blob, not Canvas)
+    const canvasBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+    
     // Step 1: Run Label Detector Specialist to get primary ROI and suggestions
     // NOTE: cropSuggestions is now CORRECTLY used later.
-    const { primaryRect, det, cropSuggestions } = await runLabelDetector(canvas, activeProfile); 
+    const { primaryRect, det, cropSuggestions } = await runLabelDetector(canvasBlob, activeProfile); 
     
     // Fallback: If no label was found, use the full canvas as the primary rect (Live Mode)
     const rectToUse = primaryRect || { x: 0, y: 0, width: canvas.width, height: canvas.height };

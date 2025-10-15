@@ -8,6 +8,7 @@ import { extractMs, extractCustomer, extractModel } from "../extractors.js"; // 
 // Constants for thumbnail generation
 const THUMBNAIL_WIDTH = 160;
 const THUMBNAIL_QUALITY = 0.6;
+const MIN_DIMENSION = 1; // Minimum width/height to avoid division by zero
 
 // Helper to get rect array [x,y,w,h] from crop canvas size
 function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; }
@@ -22,7 +23,6 @@ function generateThumbnail(sourceCanvas, rect) {
     const [x, y, w, h] = rect;
     
     // Safety check: ensure valid dimensions (min 1px to avoid division by zero or extreme scaling)
-    const MIN_DIMENSION = 1;
     if (w < MIN_DIMENSION || h < MIN_DIMENSION) {
         console.warn('Invalid rect dimensions for thumbnail generation:', rect);
         return '';

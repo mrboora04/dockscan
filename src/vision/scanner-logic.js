@@ -20,6 +20,13 @@ function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; 
  */
 function generateThumbnail(sourceCanvas, rect) {
     const [x, y, w, h] = rect;
+    
+    // Safety check: ensure valid dimensions
+    if (w <= 0 || h <= 0) {
+        console.warn('Invalid rect dimensions for thumbnail generation:', rect);
+        return '';
+    }
+    
     const c = document.createElement('canvas');
     const scale = THUMBNAIL_WIDTH / w;
     

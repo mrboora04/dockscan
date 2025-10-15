@@ -93,10 +93,15 @@ signInWithEmailAndPassword(auth, email, password)
 
 ### Camera Access Pattern
 ```javascript
-const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'environment' }
-});
-videoElement.srcObject = stream;
+try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+    });
+    videoElement.srcObject = stream;
+} catch (error) {
+    console.error('Camera access error:', error);
+    displayError('Unable to access camera. Please check permissions.');
+}
 ```
 
 ## File Naming

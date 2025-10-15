@@ -110,7 +110,8 @@ function createCardElement(docId, data) {
     thumbnail.src = data.thumb || SAFE_PLACEHOLDER_SVG; 
     imageSection.appendChild(thumbnail);
     
-    imageSection.innerHTML += cropSelectorHtml; // Inject crop selector HTML
+    // Use insertAdjacentHTML to preserve the thumbnail element
+    imageSection.insertAdjacentHTML('beforeend', cropSelectorHtml);
     card.appendChild(imageSection);
 
     

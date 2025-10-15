@@ -1,10 +1,11 @@
-﻿// src/core/store.js
-import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+﻿import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { app, auth } from "./firebase.js";
+
 const db = getFirestore(app);
 
 /**
- * Saves a scan record to Firestore, adhering to the new data schema.
+ * Saves a scan record to Firestore, adhering to the application's data schema.
+ * @param {object} scanData - An object containing all the scan details.
  */
 export async function saveScan({
   msNumber = "",
@@ -15,8 +16,7 @@ export async function saveScan({
   rawText = "",
   wasCorrected = false,
   scanQuality = {},
-  // Add userName parameter
-  userName = "" 
+  userName = ""
 }) {
   return addDoc(collection(db, "scans"), {
     // Core Data
@@ -26,7 +26,7 @@ export async function saveScan({
 
     // IDs
     userId: auth.currentUser?.uid || null,
-    userName: userName, // Save the user's name
+    userName: userName,
 
     // Metadata
     timestamp: serverTimestamp(),

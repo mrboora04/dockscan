@@ -23,7 +23,7 @@ function createCardElement(docId, data) {
         card.classList.add('approved');
     }
 
-    const brand = data.diagnostics?.brandProfileUsed;
+    const brand = data.brand;
     if (brand) {
         const brandTag = document.createElement("div");
         brandTag.className = "card-brand-tag";
@@ -33,7 +33,7 @@ function createCardElement(docId, data) {
 
     const thumbnail = document.createElement("img");
     thumbnail.className = "card-thumbnail";
-    thumbnail.src = data.thumb || 'https://via.placeholder.com/350x200?text=No+Image';
+    thumbnail.src = data.thumbnail || 'https://via.placeholder.com/350x200?text=No+Image';
     card.appendChild(thumbnail);
     
     const body = document.createElement("div");
@@ -49,7 +49,7 @@ function createCardElement(docId, data) {
     infoRow.className = "card-info-row";
     infoRow.innerHTML = `
         <div class="model"><div class="label">Model</div><div class="value">${data.model || "N/A"}</div></div>
-        <div class="ms" style="text-align: right;"><div class="label">MS#</div><div class="value">${data.ms || "N/A"}</div></div>`;
+        <div class="ms" style="text-align: right;"><div class="label">MS#</div><div class="value">${data.msNumber || "N/A"}</div></div>`;
 
     const customer = document.createElement("div");
     customer.className = "card-customer";
@@ -57,9 +57,9 @@ function createCardElement(docId, data) {
 
     const details = document.createElement("div");
     details.className = "card-details";
-    const ocrConfidence = data.diagnostics?.ocrConfidence ?? 0;
-    const motionValue = data.diagnostics?.motion ?? 0;
-    details.innerHTML = `Time: ${formatTimestamp(data.ts)}<br>Summary: conf ${ocrConfidence}% · motion ${motionValue}`;
+    const ocrConfidence = data.scanQuality?.confidence ?? 0;
+    const smartCropStatus = data.scanQuality?.smartCropUsed ? "Cropped" : "Full";
+    details.innerHTML = `Time: ${formatTimestamp(data.timestamp)}<br>Summary: conf ${ocrConfidence}% · ${smartCropStatus}`;
 
     body.appendChild(infoRow);
     body.appendChild(customer);
@@ -85,8 +85,8 @@ function createCardElement(docId, data) {
         try {
             await runTransaction(db, async (transaction) => {
                 transaction.update(scanRef, { status: "approved" });
-                const brandName = data.diagnostics?.brandProfileUsed;
-                const cropRect = data.diagnostics?.cropRect;
+                const brandName = data.brand;
+                const cropRect = data.scanQuality?.cropRect;
                 if (brandName && cropRect) {
                     const profileQuery = query(collection(db, "brand_profiles"), where("brandName", "==", brandName));
                     const profileSnapshot = await getDocs(profileQuery);
@@ -126,18 +126,16 @@ function createCardElement(docId, data) {
     card.appendChild(body);
     card.appendChild(actions);
     
-    // Activate any new icons we've added
     lucide.createIcons({
-        attrs: {
-            'stroke-width': 1.5
-        },
-        nodes: actions.querySelectorAll("[data-lucide]")
+        attrs: { 'stroke-width': 1.5 },
+        nodes: card.querySelectorAll("[data-lucide]")
     });
 
     return card;
 }
 
-onSnapshot(query(collection(db, "scans"), orderBy("ts", "desc"), limit(100)), (snapshot) => {
+// Correctly order by the 'timestamp' field.
+onSnapshot(query(collection(db, "scans"), orderBy("timestamp", "desc"), limit(100)), (snapshot) => {
     scanGrid.innerHTML = "";
     snapshot.forEach(doc => {
         scanGrid.appendChild(createCardElement(doc.id, doc.data()));

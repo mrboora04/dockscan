@@ -1,63 +1,60 @@
-// src/vision/scanner-logic.js
-
 import { findLabelRect } from "./specialists/label-detector.js";
-// NEW: Import our new specialist
 import { extractInfoFromRegions } from "./specialists/info-extractor.js";
-import { extractMs, extractCustomer, extractModel } from "./extractors.js"; // We still need these for fallback/MS#
-import { processImageForScanning } from "./image-processor.js";
+import { extractMs, extractCustomer, extractModel } from "./extractors.js";
 
+// A helper function to convert the canvas to a format our specialist can use
 function canvasToBlob(canvas, type = 'image/jpeg', quality = 0.9) {
     return new Promise(resolve => canvas.toBlob(resolve, type, quality));
 }
 
 export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) {
+    // Step 1: Call the Label Detector Specialist
     const analysisBlob = await canvasToBlob(canvas);
     const smartRect = await findLabelRect(analysisBlob);
 
+    // --- THIS IS THE KEY CHANGE ---
+    // If the specialist fails, we DON'T give up. We create a "failure" record.
     if (!smartRect) {
-        console.log("Label detector failed to find a label.");
-        return null; // If we can't find the label, we can't proceed.
+        console.log("Label detector failed. Saving full image for review.");
+        // We still create a result, but with no cropped data and a full-frame thumbnail.
+        return {
+            ms: "", model: "", customer: "", raw: "No label found.",
+            thumb: canvas.toDataURL("image/jpeg", 0.7), // Use the original, full canvas
+            diagnostics: {
+                brandProfileUsed: activeProfile?.brandName || 'Generic',
+                motion: +motion.toFixed(3),
+                smartCropUsed: false, // Explicitly mark that the crop failed
+                cropRect: null,
+                ocrConfidence: 0
+            }
+        };
     }
 
-    // Create a new canvas cropped precisely to the found label
+    // --- This part of the code now only runs if a label WAS found ---
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = smartRect.width;
     labelCanvas.height = smartRect.height;
     const ctx = labelCanvas.getContext('2d');
     ctx.drawImage(canvas, smartRect.x, smartRect.y, smartRect.width, smartRect.height, 0, 0, labelCanvas.width, labelCanvas.height);
 
-    // --- DELEGATE TO THE NEW SPECIALIST ---
-    const extractedRegionData = await extractInfoFromRegions(labelCanvas, activeProfile, ocrWorker);
-    console.log("Data from regions:", extractedRegionData);
-    // ---
-
-    // We still need to run a general MS# search for now, as it can appear anywhere
-    // In the future, MS# could also be a defined region.
     const { data: ocrData } = await ocrWorker.recognize(labelCanvas);
     const ms = extractMs(ocrData, activeProfile);
-    
-    // Combine results: prioritize specialist data, then use old extractors as fallback
-    const model = extractedRegionData.model || extractModel(ocrData, activeProfile);
-    const customer = extractedRegionData.customer || extractCustomer(ocrData, activeProfile);
+    const model = extractModel(ocrData, activeProfile);
+    const customer = extractCustomer(ocrData, activeProfile);
 
     const diagnostics = {
-        brandProfileUsed: activeProfile.brandName,
+        brandProfileUsed: activeProfile?.brandName || 'Generic',
         foundMs: !!ms, foundModel: !!model, foundCustomer: !!customer,
-        msSource: 'ocr',
-        ocrConfidence: ocrData.confidence, // This confidence is for the whole label scan
+        ocrConfidence: ocrData.confidence,
         motion: +motion.toFixed(3),
-        smartCropUsed: !!smartRect,
-        cropRect: smartRect ? [smartRect.x, smartRect.y, smartRect.width, smartRect.height] : null,
+        smartCropUsed: true,
+        cropRect: [smartRect.x, smartRect.y, smartRect.width, smartRect.height],
     };
-    
-    if (ms || model) {
-        return {
-            ms, model, customer,
-            raw: ocrData.text,
-            thumb: canvas.toDataURL("image/jpeg", 0.7),
-            diagnostics
-        };
-    }
 
-    return null;
+    return {
+        ms: ms || "", model: model || "", customer: customer || "",
+        raw: ocrData.text,
+        thumb: labelCanvas.toDataURL("image/jpeg", 0.7), // The successful cropped thumbnail
+        diagnostics
+    };
 }

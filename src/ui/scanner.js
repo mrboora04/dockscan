@@ -3,7 +3,7 @@ import { runScanAnalysis } from "../vision/scanner-logic.js";
 import { saveScan } from "../core/store.js";
 import { processImageForScanning } from "../vision/image-processor.js";
 import { getFirestore, doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-import { app } from "../core/firebase.js";
+import { app ,auth} from "../core/firebase.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const SCAN_MODE = urlParams.get('mode') || 'manual';
@@ -78,49 +78,45 @@ async function analyzeAndSave(canvas, motion) {
         uiLight("#34d399", `Select a brand to begin. [AUTO MODE]`);
         return;
     }
+
     frozen = true;
     uiLight("#1d4ed8", "Processing...");
 
     const result = await runScanAnalysis(canvas, activeProfile, ocrWorker, motion);
 
-    // Handle Dual Label Logic (for LG)
-    if (activeProfile?.logicType === 'dual_label') {
-        const isShippingLabel = result && result.ms && !result.model;
-        const isProductLabel = result && result.model && !result.ms;
+    // --- THIS IS THE FIX ---
+    // Map the result from our specialist to the schema your store.js expects.
+    const scanDataForDb = {
+        msNumber: result.ms,
+        model: result.model,
+        customer: result.customer,
+        brand: result.diagnostics.brandProfileUsed,
+        thumbnail: result.thumb,
+        rawText: result.raw,
+        scanQuality: { // The diagnostics object becomes the scanQuality object
+            confidence: result.diagnostics.ocrConfidence,
+            motionDetected: result.diagnostics.motion > 0.08,
+            smartCropUsed: result.diagnostics.smartCropUsed,
+            cropRect: result.diagnostics.cropRect,
+        },
+        userName: auth.currentUser?.email || "Unknown" // Get the user's email
+    };
+    
+    // Now we save the correctly formatted data.
+    await saveScan(scanDataForDb);
+    // --- END OF FIX ---
 
-        if (isShippingLabel && !stagedScan) {
-            stagedScan = { ...result, thumb: canvas.toDataURL("image/jpeg", 0.7) };
-            uiLight("#22c55e", `STAGED: MS# ${stagedScan.ms}. Now scan MODEL label.`);
-            frozen = false;
-            return;
-        }
-        
-        if (isProductLabel && stagedScan) {
-            const finalScan = { ...stagedScan, ...result, raw: `${stagedScan.raw}\n---\n${result.raw}` };
-            await saveScan(finalScan);
-            uiLight("#22c55e", `Success! Complete ${activeProfile.brandName} scan saved.`);
-            stagedScan = null;
-            await new Promise(r => setTimeout(r, 2000));
-            frozen = false;
-            return;
-        }
-    } else { // Handle Single Label Logic
-        if (result) {
-            await saveScan({ ...result, raw: result.raw.slice(0, 300) });
-            const savedItem = result.model || result.ms || 'Scan';
-            uiLight("#22c55e", `Saved: ${savedItem}`);
-            await new Promise(r => setTimeout(r, 1200));
-        }
+    if (result.diagnostics.smartCropUsed) {
+        const savedItem = result.model || result.ms || 'Label Scan';
+        uiLight("#22c55e", `Saved: ${savedItem}`);
+    } else {
+        uiLight("#f59e0b", `Saved full image for review.`);
     }
-
-    if (!result && !stagedScan) { // Don't show "not found" if a scan is staged
-        uiLight("#f59e0b", "Scan again. Aim for key info.");
-        await new Promise(r => setTimeout(r, 1000));
-    }
+    
+    await new Promise(r => setTimeout(r, 1500));
     
     frozen = false;
 }
-
 async function tick() {
     if (busy || frozen || v.videoWidth === 0 || !cap) return;
     

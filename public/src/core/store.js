@@ -1,4 +1,4 @@
-﻿// src/core/store.js
+// src/core/store.js
 import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { app, auth } from "./firebase.js";
 const db = getFirestore(app);

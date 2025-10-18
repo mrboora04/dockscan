@@ -1,4 +1,4 @@
-﻿export async function makeLiveCapture(videoEl, boxEl){
+export async function makeLiveCapture(videoEl, boxEl){
   const stream = await navigator.mediaDevices.getUserMedia({
     video:{facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080}, frameRate:{ideal:30}}
   });

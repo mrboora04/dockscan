@@ -1,4 +1,4 @@
-﻿export function norm(t = "") {
+export function norm(t = "") {
   return t.replace(/\r/g, "").replace(/[^\x20-\x7E\n]/g, "").replace(/[OQ]/g, "0").replace(/[IL]/g, "1").toUpperCase();
 }
 

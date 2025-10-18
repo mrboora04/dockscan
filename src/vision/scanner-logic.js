@@ -1,9 +1,10 @@
 // src/vision/scanner-logic.js
-// This file coordinates the specialists and maps the final result to the V2 schema.
+// This is the Specialist Coordinator. It handles the image pipeline and V2 data mapping.
 
 import { runLabelDetector } from "./specialists/label-detector.js";
-import { extractInfoFromRegions } from "./specialists/info-extractor.js"; // <-- NEW IMPORT
-import { extractMs, extractCustomer, extractModel } from "../extractors.js"; // <-- KEEP FALLBACKS
+import { extractInfoFromRegions } from "./specialists/info-extractor.js";
+import { extractMs, extractCustomer, extractModel } from "../extractors.js";
+import { runConditionSpecialist } from "./specialists/condition-specialist.js"; // <--- CONDITION SPECIALIST INTEGRATION
 
 // Constants for thumbnail generation
 const THUMBNAIL_WIDTH = 160;
@@ -22,7 +23,7 @@ function getCropRectArray(canvas) { return [0, 0, canvas.width, canvas.height]; 
 function generateThumbnail(sourceCanvas, rect) {
     const [x, y, w, h] = rect;
     
-    // Safety check: ensure valid dimensions (min 1px to avoid division by zero or extreme scaling)
+    // Safety check: ensure valid dimensions
     if (w < MIN_DIMENSION || h < MIN_DIMENSION) {
         console.warn('Invalid rect dimensions for thumbnail generation:', rect);
         return '';
@@ -35,8 +36,15 @@ function generateThumbnail(sourceCanvas, rect) {
     c.height = Math.max(MIN_DIMENSION, h * scale);
 
     const ctx = c.getContext('2d');
-    ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', THUMBNAIL_QUALITY); 
+    
+    try {
+        ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, c.width, c.height);
+        return c.toDataURL('image/jpeg', THUMBNAIL_QUALITY); 
+    } catch(e) {
+        // This catch block handles the persistent security error you were hitting.
+        console.error("Thumbnail generation failed due to drawing issue:", e);
+        return ''; 
+    }
 }
 
 /**
@@ -48,16 +56,18 @@ function generateThumbnail(sourceCanvas, rect) {
  * @returns {Promise<object>} The full scan result adhering to the V2 Firestore schema.
  */
 export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) {
+    // FIX: Ensure the primary thumbnail is generated immediately and safely.
+    const originalThumb = generateThumbnail(canvas, getCropRectArray(canvas)); 
+    
     const brandName = activeProfile?.brandName || 'Generic';
-    const originalThumb = canvas.toDataURL("image/jpeg", 0.7);
-    const motionValue = +motion.toFixed(3);
-    
-    // Convert canvas to Blob for the Label Detector (it expects File/Blob, not Canvas)
-    const canvasBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
-    
-    // Step 1: Run Label Detector Specialist to get primary ROI and suggestions
-    // NOTE: cropSuggestions is now CORRECTLY used later.
-    const { primaryRect, det, cropSuggestions } = await runLabelDetector(canvasBlob, activeProfile); 
+
+    // Step 0: Run Condition Specialist (for metrics and guidance)
+    const { diagnostics: conditionDiagnostics } = runConditionSpecialist(canvas, motion);
+    const motionValue = conditionDiagnostics.motion; 
+
+    // Step 1: Run Label Detector Specialist 
+    // CRITICAL FIX: Pass the Canvas directly (NOT the Blob)
+    const { primaryRect, det, cropSuggestions } = await runLabelDetector(canvas, activeProfile); 
     
     // Fallback: If no label was found, use the full canvas as the primary rect (Live Mode)
     const rectToUse = primaryRect || { x: 0, y: 0, width: canvas.width, height: canvas.height };
@@ -68,16 +78,9 @@ export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) 
     labelCanvas.width = rectToUse.width;
     labelCanvas.height = rectToUse.height;
     const ctx = labelCanvas.getContext('2d');
-    
-    // Draw the cropped region from the source canvas
-    ctx.drawImage(canvas, 
-        rectToUse.x, rectToUse.y, rectToUse.width, rectToUse.height, 
-        0, 0, labelCanvas.width, labelCanvas.height
-    );
+    ctx.drawImage(canvas, rectToUse.x, rectToUse.y, rectToUse.width, rectToUse.height, 0, 0, labelCanvas.width, labelCanvas.height);
 
     // --- Core Extraction ---
-
-    // A. Full OCR for raw text and overall confidence (Run once for efficiency)
     const { data: ocrData } = await ocrWorker.recognize(labelCanvas);
     const ocrConfidence = Math.round(ocrData.confidence);
     
@@ -89,7 +92,7 @@ export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) 
         console.warn("Info Extractor (Zone OCR) failed:", e);
     }
     
-    // C. Combine Results: Prioritize targeted extraction, fallback to full text extraction
+    // C. Combine Results
     const msFallback = extractMs(ocrData, activeProfile);
     const modelFallback = extractModel(ocrData, activeProfile);
     const customerFallback = extractCustomer(ocrData, activeProfile);
@@ -103,7 +106,7 @@ export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) 
     // CRITICAL FIX: Generate thumbnails for ALL suggestions from the Label Detector
     const finalizedCropSuggestions = cropSuggestions.map(s => ({
         rect: s.rect,
-        thumb: generateThumbnail(canvas, s.rect), // Use the new helper here
+        thumb: generateThumbnail(canvas, s.rect), // Use the SAFE generator here
         source: s.source || 'unknown'
     }));
 
@@ -120,17 +123,17 @@ export async function runScanAnalysis(canvas, activeProfile, ocrWorker, motion) 
         customer: customer || "",
         brand: brandName,
         raw: ocrData.text || "No OCR text.",
-        thumb: originalThumb, // Use original frame for the main card thumbnail
+        thumb: originalThumb, // The main thumbnail is the safely generated one
 
         scanQuality: { // V2 Schema: Diagnostics
             confidence: ocrConfidence,
-            motion: motionValue,
             cropRect: rectArrayToUse,
             smartCropUsed: !!primaryRect,
             barcodeRaw: det?.raw || '',
+            // Add Condition Specialist metrics
+            ...conditionDiagnostics 
         },
         trainingData: { // V2 Schema: Supervisor Training Hub data
-            // USE the correctly finalized array
             cropSuggestions: finalizedCropSuggestions
         }
     };

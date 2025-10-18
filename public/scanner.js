@@ -1,9 +1,9 @@
-import { makeLiveCapture } from "../vision/live-capture.js";
-import { runScanAnalysis } from "../vision/scanner-logic.js";
-import { saveScan } from "../core/store.js";
-import { processImageForScanning } from "../vision/image-processor.js"; // Used for guidance logic
+import { makeLiveCapture } from "../src/vision/live-capture.js";
+import { runScanAnalysis } from "../src/vision/scanner-logic.js";
+import { saveScan } from "../src/core/store.js";
+import { processImageForScanning } from "../src/vision/image-processor.js"; // Used for guidance logic
 import { getFirestore, doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-import { app ,auth} from "../core/firebase.js";
+import { app ,auth} from "../src/core/firebase.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const SCAN_MODE = urlParams.get('mode') || 'manual';
@@ -23,14 +23,20 @@ let cap = null, loop = null, busy = false, frozen = false, prev = null;
 let activeProfile = null;
 let stagedScan = null;
 
-const ocrWorker = await Tesseract.createWorker("eng", 1);
-await ocrWorker.setParameters({
-  tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
-  tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/#",
-});
+// Initialize OCR worker asynchronously without blocking camera initialization
+let ocrWorker = null;
+const ocrWorkerPromise = (async () => {
+  const worker = await Tesseract.createWorker("eng", 1);
+  await worker.setParameters({
+    tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
+    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/#",
+  });
+  ocrWorker = worker;
+  return worker;
+})();
 
 function uiLight(color, msg) { box.style.borderColor = color; hud.textContent = msg; }
-function setActive(btn) { zoomBtns.forEach(b => b.classList.toggle("on", b => b.classList.toggle("on", b === btn))); }
+function setActive(btn) { zoomBtns.forEach(b => b.classList.toggle("on", b === btn)); }
 function downsample(canvas) { const W=160,H=120,c=document.createElement("canvas");c.width=W;c.height=H;const g=c.getContext("2d",{willReadFrequently:true});g.drawImage(canvas,0,0,W,H);const d=g.getImageData(0,0,W,H).data;const out=new Uint8Array(W*H);for(let i=0,j=0;i<d.length;i+=4,j++){out[j]=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0}return out;}
 function delta(a, b) { if(!a||!b)return 1;let s=0;for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);return s/(a.length*255)}
 
@@ -82,6 +88,11 @@ async function analyzeAndSave(canvas, motion) {
     uiLight("#1d4ed8", "Processing...");
 
     try {
+        // Ensure OCR worker is ready before processing
+        if (!ocrWorker) {
+            await ocrWorkerPromise;
+        }
+        
         // 1. Call the Specialist Coordinator
         const result = await runScanAnalysis(canvas, activeProfile, ocrWorker, motion);
 
@@ -158,6 +169,7 @@ async function start() {
             uiLight("#34d399", `Ready to scan. [MANUAL MODE]`);
         }
     } catch (e) {
+        console.error('Camera initialization error:', e);
         hud.innerHTML = `<b>Camera error. Please grant permission.</b>`;
     }
 }
@@ -186,4 +198,12 @@ shutterBtn.addEventListener("click", async () => {
 btnStop.addEventListener("click", stop);
 window.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
 
-start();
+// Initialize the scanner with proper error handling
+(async () => {
+    try {
+        await start();
+    } catch (e) {
+        console.error('Failed to start scanner:', e);
+        hud.innerHTML = `<b>Scanner initialization failed. Please refresh.</b>`;
+    }
+})();

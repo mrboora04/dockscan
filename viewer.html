@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DockScan - Viewer</title>
-    <link rel="stylesheet" href="/public/viewer.css">
+    <link rel="stylesheet" href="/viewer.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body class="viewer-body-fixed">
@@ -13,7 +13,7 @@
             <input type="checkbox" id="chkAll" class="select-all-checkbox">
             <h1>Scan Viewer</h1>
         </div>
-        <a href="/index.html" class="btn ghost">
+        <a href="/main-menu.html" class="btn ghost">
             <i data-lucide="home"></i>
             <span>Main Menu</span>
         </a>
@@ -24,7 +24,7 @@
 
     <footer class="viewer-footer-fixed">
         <div class="controls">
-            <a href="/live.html" class="btn primary">
+            <a href="/scanner.html?mode=manual" class="btn primary">
                 <i data-lucide="camera"></i>
                 <span>New Scan</span>
             </a>
@@ -39,7 +39,7 @@
         </div>
     </footer>
 
-    <script src="/public/config.js"></script>
+    <script src="/config.js"></script>
     <script type="module" src="/src/ui/viewer.js"></script>
     <script>
         // Initialize Lucide icons

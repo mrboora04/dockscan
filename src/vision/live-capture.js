@@ -37,22 +37,3 @@
   }
   return { grabCropCanvas, setZoom, getZoom, caps };
 }
-
-// ZXing: try reading barcode (Code128/39 etc.) from a canvas
-export async function readBarcodeFromCanvas(canvas){
-  const ctx = canvas.getContext("2d",{willReadFrequently:true});
-  const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-  // grayscale buffer for ZXing
-  const lum = new Uint8ClampedArray(img.width*img.height);
-  for(let i=0,j=0;i<img.data.length;i+=4,j++){
-    lum[j] = (img.data[i]*0.299 + img.data[i+1]*0.587 + img.data[i+2]*0.114) | 0;
-  }
-  const { BitmapLuminanceSource, BinaryBitmap, HybridBinarizer, MultiFormatReader } = ZXing;
-  try{
-    const src = new BitmapLuminanceSource(lum, img.width, img.height);
-    const bin = new BinaryBitmap(new HybridBinarizer(src));
-    const reader = new MultiFormatReader();
-    const res = reader.decode(bin);
-    return res?.getText?.() || "";
-  }catch{ return ""; }
-}

@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>DockScan - Scanner</title>
-    <link rel="manifest" href="/public/manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
     <div class="scanner-container">
@@ -23,19 +23,20 @@
             <button class="zoom-btn" data-z="3">3x</button>
         </div>
         <footer class="controls">
-            <a href="/main-menu.html" class="btn ghost">Menu</a>
+            <button id="btnStop" class="btn ghost">Menu</button>
             <button id="shutter" class="btn shutter"></button>
-            <button id="btnStop" class="btn ghost">Stop</button>
+            <div style="width: 68px;"></div>
         </footer>
     </div>
 
     <script src="https://unpkg.com/@zxing/library@0.21.0/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="/public/config.js"></script>
+    
+    <script src="/config.js"></script>
     <script type="module" src="/src/ui/scanner.js"></script> 
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/public/sw.js');
+            navigator.serviceWorker.register('/sw.js');
         }
     </script>
 </body>

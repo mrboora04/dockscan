@@ -1,3 +1,6 @@
+// src/ocr.js
+import { extractMs, extractModel, extractCustomer } from './vision/extractors.js';
+
 const OCR_TIMEOUT_MS = 15000;
 
 export async function createOcrWorker() {
@@ -65,57 +68,15 @@ function otsu(canvas) {
   return canvas;
 }
 
-
-export function extractMs(text='') {
-  let t = text.toUpperCase().replace(/[OQ]/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8');
-  const m = t.match(/6\s*1\s*0\s*0[\s-]*[\d\s-]{6,}/);
-  if (m){ const cand=m[0].replace(/\D/g,'').slice(0,10); if(/^6100\d{6}$/.test(cand)) return cand; }
-  const digits = t.replace(/\D/g,''); const i = digits.indexOf('6100');
-  if (i>=0){ const cand=digits.slice(i,i+10); if(/^6100\d{6}$/.test(cand)) return cand; }
-  return '';
-}
-
-export function extractModel(text='') {
-  const lines = text.toUpperCase().split(/\r?\n/).map(s=>s.trim());
-  // LG models: letters+digits, often 6–12 chars, e.g., WKEX200HWA, LDTS5552S, LF29T6000S
-  const rx = /\b[A-Z]{2,5}[A-Z0-9]{3,9}[A-Z]\b/;
-  for (const L of lines) {
-    const m = L.match(rx);
-    if (m && !/CANADA|KOREA|MADE|BACK|FRONT|ELECTRIC|GAS|STAINLESS|BLACK|WHITE|MODEL|SERIAL|WASHTOWER|REFRIGERATOR|DISHWASHER/.test(L))
-      return m[0];
-  }
-  return '';
-}
-
-export function extractCustomer(text='') {
-  const T = text.toUpperCase();
-  // pick line after a known key
-  const keyRx = /(CONSIGNEE|CONSUMER|CUSTOMER|DESTINATAIRE)\s*:?\s*([A-Z\s'.-]{3,})/;
-  const k = T.match(keyRx);
-  if (k && k[2]) return k[2].replace(/\s{2,}/g,' ').trim();
-  // fallback: a long namey line with spaces near address block
-  const lines = T.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  const guess = lines.find(L => /[A-Z]{3,}\s+[A-Z]{3,}/.test(L) && L.length <= 40 && !/\d{5,}/.test(L));
-  return guess || '';
-}
-
 /**
- * OCR just the region we were given (usually expanded around barcode)
- * mode 'lg' narrows Tesseract to digits/spaces primarily for MS# detection.
+ * OCR just the region we were given.
+ * It now relies on the centralized extractor functions for parsing.
  */
-export async function ocrRegion(worker, file, rect=null, mode='regular') {
+export async function ocrRegion(worker, file, rect = null) {
   const bmp = await createImageBitmap(file);
   const canvas = otsu(drawCrop(bmp, rect));
 
-  if (mode === 'lg') {
-    await worker.setParameters({
-      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -',
-      preserve_interword_spaces: '1'
-    });
-  } else {
-    await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK });
-  }
+  await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK });
 
   const recog = worker.recognize(canvas);
   const timeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error('ocr_timeout')), OCR_TIMEOUT_MS));
@@ -128,6 +89,6 @@ export async function ocrRegion(worker, file, rect=null, mode='regular') {
     ms: extractMs(raw),
     model: extractModel(raw),
     customer: extractCustomer(raw),
-    conf  
+    conf
   };
 }
